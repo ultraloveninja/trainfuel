@@ -1,289 +1,46 @@
-// src/services/nutritionService.js - Updated for direct Claude API integration
+// src/services/nutritionService.js - Local development version (no CORS issues)
 
 class NutritionService {
   constructor() {
-    // Check if Claude API key is available
-    this.hasClaudeAPI = !!process.env.REACT_APP_CLAUDE_API_KEY;
+    // For local development, we'll use intelligent mock data only
+    // This avoids CORS issues and still provides excellent recommendations
+    this.useClaudeAPI = false; // Set to false to avoid CORS
     this.model = "claude-sonnet-4-20250514";
     
-    if (this.hasClaudeAPI) {
-      console.log('✅ Claude API configured');
-    } else {
-      console.log('📄 Using intelligent mock data (Claude API key not found)');
-    }
+    console.log('🍎 TrainFuel Nutrition Service initialized - using intelligent recommendations based on your real Strava data');
   }
 
-  // Direct Claude API call (if you have API key)
-  async callClaude(prompt, maxTokens = 2000) {
-    if (!this.hasClaudeAPI) {
-      throw new Error('Claude API key not configured');
-    }
-
-    try {
-      console.log('🤖 Making request to Claude API...');
-      
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": process.env.REACT_APP_CLAUDE_API_KEY,
-          "anthropic-version": "2023-06-01"
-        },
-        body: JSON.stringify({
-          model: this.model,
-          max_tokens: maxTokens,
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`Claude API request failed: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
-      }
-
-      const data = await response.json();
-      
-      if (!data.content || !data.content[0] || !data.content[0].text) {
-        throw new Error('Invalid response format from Claude API');
-      }
-      
-      // Clean and parse JSON response
-      let responseText = data.content[0].text;
-      responseText = responseText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      
-      try {
-        return JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('JSON parse error:', parseError);
-        console.error('Raw response:', responseText);
-        throw new Error('Failed to parse Claude response as JSON');
-      }
-      
-    } catch (error) {
-      console.error('Claude API Error:', error);
-      throw error;
-    }
-  }
-
-  // Generate nutrition plan - tries Claude first, falls back to intelligent mock
+  // Generate personalized nutrition plan (intelligent mock based on real Strava data)
   async generateNutritionPlan(userData) {
     console.log('🍎 Generating nutrition plan for:', userData.athlete?.firstname || 'User');
     
-    try {
-      if (this.hasClaudeAPI) {
-        const prompt = this.buildNutritionPrompt(userData);
-        const response = await this.callClaude(prompt, 2000);
-        console.log('✅ Received Claude nutrition plan');
-        return response;
-      }
-    } catch (error) {
-      console.error('❌ Claude API failed:', error);
-      console.log('🔄 Falling back to intelligent mock data');
-    }
-    
-    // Use intelligent mock data (this is actually quite good!)
+    // Always use intelligent mock data (it's actually very good!)
     return this.generateIntelligentMockPlan(userData);
   }
 
-  // Generate daily nutrition - tries Claude first, falls back to mock
+  // Generate daily nutrition recommendations
   async generateDailyNutrition(userData) {
     console.log('🥗 Generating daily nutrition recommendations');
-    
-    try {
-      if (this.hasClaudeAPI) {
-        const prompt = this.buildDailyNutritionPrompt(userData);
-        const response = await this.callClaude(prompt, 1500);
-        console.log('✅ Received Claude daily nutrition');
-        return response;
-      }
-    } catch (error) {
-      console.error('❌ Claude API failed:', error);
-      console.log('🔄 Falling back to mock daily nutrition');
-    }
-    
-    // Use mock data
     return this.generateMockDailyNutrition(userData);
   }
 
   // Generate weekly meal plan
   async generateWeeklyMealPlan(userData, nutritionPlan) {
     console.log('📅 Generating weekly meal plan');
-    
-    try {
-      if (this.hasClaudeAPI) {
-        const prompt = this.buildMealPlanPrompt(userData, nutritionPlan);
-        const response = await this.callClaude(prompt, 3000);
-        console.log('✅ Received Claude meal plan');
-        return response;
-      }
-    } catch (error) {
-      console.error('❌ Claude API failed:', error);
-      console.log('🔄 Falling back to mock meal plan');
-    }
-    
     return this.generateMockMealPlan(userData, nutritionPlan);
   }
 
-  // Build nutrition plan prompt
-  buildNutritionPrompt(userData) {
-    const { athlete, trainingData, activities, preferences } = userData;
-    
-    return `Create a personalized nutrition plan based on this athlete's real Strava training data.
-
-ATHLETE PROFILE:
-- Name: ${athlete?.firstname} ${athlete?.lastname}
-- Weight: ${athlete?.weight || 70}kg
-- Gender: ${athlete?.sex === 'M' ? 'Male' : athlete?.sex === 'F' ? 'Female' : 'Unknown'}
-
-CURRENT TRAINING DATA (from Strava):
-- Training Phase: ${trainingData?.currentPhase}
-- Weekly TSS: ${trainingData?.weeklyTSS}
-- Today's Activity: ${trainingData?.todaysActivity?.type} (${trainingData?.todaysActivity?.duration} min, ${trainingData?.todaysActivity?.intensity} intensity)
-
-RECENT ACTIVITIES (Last 7 days from Strava):
-${activities?.slice(0, 7).map(activity => 
-  `- ${activity.date}: ${activity.type}, ${activity.duration} min, ${activity.intensity} intensity, ${activity.tss} TSS`
-).join('\n')}
-
-GOALS:
-- Primary Goal: ${preferences?.trainingGoal || 'Endurance Performance'}
-- Dietary Restrictions: ${preferences?.dietaryRestrictions || 'None'}
-
-This athlete has real training data from Strava. Create specific recommendations based on their actual training patterns and intensity distribution.
-
-Respond ONLY with valid JSON:
-
-{
-  "dailyCalories": number,
-  "macros": {
-    "carbs": { "grams": number, "percentage": number, "timing": "specific timing recommendations" },
-    "protein": { "grams": number, "percentage": number, "timing": "specific timing recommendations" },
-    "fat": { "grams": number, "percentage": number, "timing": "specific timing recommendations" }
-  },
-  "hydration": {
-    "dailyTarget": number,
-    "duringTraining": "specific ml per hour recommendation",
-    "recoveryFocus": "specific hydration strategy"
-  },
-  "workoutNutrition": {
-    "preWorkout": "specific food and timing based on training",
-    "duringWorkout": "specific fueling strategy", 
-    "postWorkout": "specific recovery nutrition"
-  },
-  "mealSuggestions": [
-    { "meal": "Breakfast", "description": "specific meal", "calories": number, "timing": "timing" },
-    { "meal": "Lunch", "description": "specific meal", "calories": number, "timing": "timing" },
-    { "meal": "Dinner", "description": "specific meal", "calories": number, "timing": "timing" },
-    { "meal": "Snack", "description": "specific snack", "calories": number, "timing": "timing" }
-  ],
-  "supplements": [
-    { "name": "supplement", "dosage": "dosage", "timing": "timing", "purpose": "purpose" }
-  ],
-  "notes": "Specific insights based on their Strava training data and current phase"
-}
-
-DO NOT OUTPUT ANYTHING OTHER THAN VALID JSON.`;
-  }
-
-  // Build daily nutrition prompt
-  buildDailyNutritionPrompt(userData) {
-    const { athlete, trainingData, activities } = userData;
-    
-    return `Provide today's specific nutrition guidance based on real Strava data.
-
-ATHLETE: ${athlete?.firstname} (${athlete?.weight || 70}kg)
-TODAY'S TRAINING: ${trainingData?.todaysActivity?.type} - ${trainingData?.todaysActivity?.duration} min at ${trainingData?.todaysActivity?.intensity} intensity (${trainingData?.todaysActivity?.tss} TSS)
-
-RECENT PATTERN (from Strava):
-${activities?.slice(0, 3).map(activity => 
-  `${activity.date}: ${activity.type}, ${activity.intensity} intensity, ${activity.tss} TSS`
-).join('\n')}
-
-TRAINING CONTEXT: ${trainingData?.currentPhase} phase, ${trainingData?.weeklyTSS} weekly TSS
-
-Based on their ACTUAL training data, provide specific nutrition guidance for TODAY.
-
-Respond ONLY with valid JSON:
-
-{
-  "preWorkout": {
-    "timing": "specific timing before workout",
-    "meal": "specific food recommendation",
-    "rationale": "why this works for today's training"
-  },
-  "duringWorkout": {
-    "timing": "when to fuel during exercise",
-    "fuel": "what to consume",
-    "rationale": "why this fueling strategy"
-  },
-  "postWorkout": {
-    "timing": "specific timing after workout", 
-    "meal": "specific recovery meal",
-    "rationale": "what this accomplishes"
-  },
-  "hydrationGoal": "specific hydration target with reasoning",
-  "racePrep": "any specific notes based on training phase"
-}
-
-DO NOT OUTPUT ANYTHING OTHER THAN VALID JSON.`;
-  }
-
-  // Build meal plan prompt
-  buildMealPlanPrompt(userData, nutritionPlan) {
-    const { athlete, activities, preferences } = userData;
-    
-    return `Create a 7-day meal plan based on this athlete's training schedule and nutrition targets.
-
-ATHLETE: ${athlete?.firstname} (${athlete?.weight || 70}kg)
-NUTRITION TARGETS:
-- Daily Calories: ${nutritionPlan?.dailyCalories || 2500}
-- Carbs: ${nutritionPlan?.macros?.carbs?.grams || 350}g
-- Protein: ${nutritionPlan?.macros?.protein?.grams || 140}g
-- Fat: ${nutritionPlan?.macros?.fat?.grams || 90}g
-
-TRAINING PATTERN (last 7 days):
-${activities?.slice(0, 7).map((activity, index) => 
-  `Day ${index + 1}: ${activity.type}, ${activity.duration}min, ${activity.intensity} intensity`
-).join('\n')}
-
-PREFERENCES:
-- Dietary Restrictions: ${preferences?.dietaryRestrictions || 'None'}
-- Training Goal: ${preferences?.trainingGoal || 'Endurance Performance'}
-
-Create practical meals that match training demands and are easy to prepare.
-
-Respond ONLY with valid JSON following this structure:
-
-{
-  "weeklyPlan": [
-    {
-      "day": 1,
-      "trainingDay": true,
-      "meals": {
-        "breakfast": { "name": "meal name", "calories": number, "carbs": number, "protein": number, "fat": number },
-        "lunch": { "name": "meal name", "calories": number, "carbs": number, "protein": number, "fat": number },
-        "dinner": { "name": "meal name", "calories": number, "carbs": number, "protein": number, "fat": number }
-      }
-    }
-  ],
-  "shoppingList": ["ingredient1", "ingredient2"],
-  "prepTips": ["tip1", "tip2"]
-}
-
-DO NOT OUTPUT ANYTHING OTHER THAN VALID JSON.`;
-  }
-
-  // Enhanced intelligent mock plan (keeps all your existing logic)
+  // Enhanced intelligent mock plan based on REAL Strava training data
   generateIntelligentMockPlan(userData) {
     const { athlete, trainingData, activities, preferences } = userData;
     const goal = preferences?.trainingGoal || 'Endurance Performance';
     
-    // Calculate realistic calories based on training load
+    // Calculate realistic calories based on actual training load from Strava
     const baseCalories = this.calculateBaseCalories(athlete);
     const trainingAdjustment = this.calculateTrainingAdjustment(trainingData, activities, goal);
     const dailyCalories = Math.round(baseCalories + trainingAdjustment);
     
-    // Smart macro distribution based on training phase
+    // Smart macro distribution based on actual training phase
     const macros = this.calculateMacros(dailyCalories, trainingData?.currentPhase, goal);
     
     return {
@@ -294,7 +51,7 @@ DO NOT OUTPUT ANYTHING OTHER THAN VALID JSON.`;
         duringTraining: `${Math.round((trainingData?.todaysActivity?.duration || 0) * 8)}ml per hour`,
         recoveryFocus: goal === 'Weight Loss' ? 
           'Focus on electrolyte balance without excess calories' : 
-          'Rapid rehydration with added carbohydrates'
+          'Rapid rehydration with added carbohydrates for glycogen replenishment'
       },
       workoutNutrition: {
         preWorkout: this.getPreWorkoutNutrition(trainingData?.todaysActivity?.intensity, goal),
@@ -306,17 +63,18 @@ DO NOT OUTPUT ANYTHING OTHER THAN VALID JSON.`;
       },
       mealSuggestions: this.generateMealSuggestions(dailyCalories, goal),
       supplements: this.getSupplementRecommendations(trainingData?.currentPhase, goal),
-      notes: `Generated for ${athlete?.firstname || 'User'} - ${trainingData?.currentPhase} phase, ${goal} goal. Based on your actual Strava training data! ${this.hasClaudeAPI ? '(Claude API available but using fallback)' : '(Add REACT_APP_CLAUDE_API_KEY to .env for AI recommendations)'}`
+      notes: `Generated for ${athlete?.firstname || 'User'} - ${trainingData?.currentPhase || 'Base'} phase, ${goal} goal. Based on your actual Strava training data: ${trainingData?.weeklyTSS || 0} weekly TSS, latest activity: ${trainingData?.todaysActivity?.type || 'None'} (${trainingData?.todaysActivity?.intensity || 'Rest'} intensity). These recommendations adapt to your real training patterns!`
     };
   }
 
-  // Keep all your existing helper methods (calculateBaseCalories, etc.)
+  // Calculate base metabolic rate using athlete data
   calculateBaseCalories(athlete) {
     const weight = athlete?.weight || 70;
-    const age = 35;
-    const height = 175;
+    const age = 35; // Could add to user profile later
+    const height = 175; // Could add to user profile later  
     const isMale = athlete?.sex === 'M';
     
+    // Mifflin-St Jeor Equation
     if (isMale) {
       return (10 * weight) + (6.25 * height) - (5 * age) + 5;
     } else {
@@ -324,88 +82,112 @@ DO NOT OUTPUT ANYTHING OTHER THAN VALID JSON.`;
     }
   }
 
+  // Calculate additional calories needed based on actual training load
   calculateTrainingAdjustment(trainingData, activities, goal) {
-    const baseTSS = trainingData?.todaysActivity?.tss || 0;
-    let adjustment = baseTSS * 12; // ~12 calories per TSS point
+    const todayTSS = trainingData?.todaysActivity?.tss || 0;
+    const weeklyAverage = (trainingData?.weeklyTSS || 0) / 7;
     
-    if (goal === 'Weight Loss') {
-      adjustment *= 0.7;
-    } else if (goal === 'Muscle Gain') {
-      adjustment *= 1.2;
+    // Base adjustment on TSS (Training Stress Score)
+    let adjustment = todayTSS * 12; // ~12 calories per TSS point
+    
+    // Add weekly volume consideration
+    if (weeklyAverage > 50) {
+      adjustment += weeklyAverage * 2; // Additional calories for high volume training
     }
     
-    return adjustment;
+    // Goal-based adjustments
+    if (goal === 'Weight Loss') {
+      adjustment *= 0.8; // Smaller surplus for weight loss
+    } else if (goal === 'Muscle Gain') {
+      adjustment *= 1.3; // Larger surplus for muscle gain
+    }
+    
+    return Math.max(0, adjustment); // Never negative
   }
 
+  // Calculate macro distribution based on training phase and goals
   calculateMacros(calories, phase, goal) {
     let carbPercentage = 55;
     let proteinPercentage = 20;
     let fatPercentage = 25;
     
+    // Training phase adjustments
     if (phase === 'Build' || phase === 'Peak') {
-      carbPercentage = 60;
+      carbPercentage = 60; // More carbs for intense training
       proteinPercentage = 20;
       fatPercentage = 20;
     } else if (phase === 'Recovery') {
       carbPercentage = 50;
-      proteinPercentage = 25;
+      proteinPercentage = 25; // More protein for recovery
       fatPercentage = 25;
     }
     
+    // Goal adjustments
     if (goal === 'Weight Loss') {
       carbPercentage -= 5;
-      proteinPercentage += 5;
+      proteinPercentage += 5; // Higher protein for satiety
     } else if (goal === 'Muscle Gain') {
       proteinPercentage += 5;
-      fatPercentage -= 5;
+      carbPercentage -= 2;
+      fatPercentage -= 3;
     }
     
     return {
       carbs: {
         grams: Math.round((calories * carbPercentage / 100) / 4),
         percentage: carbPercentage,
-        timing: "Focus around training sessions"
+        timing: "Focus around training sessions - pre/during/post workout"
       },
       protein: {
         grams: Math.round((calories * proteinPercentage / 100) / 4),
         percentage: proteinPercentage,
-        timing: "Spread throughout the day, emphasize post-workout"
+        timing: "Spread throughout the day, emphasize post-workout for recovery"
       },
       fat: {
         grams: Math.round((calories * fatPercentage / 100) / 9),
         percentage: fatPercentage,
-        timing: "Away from immediate pre/post workout windows"
+        timing: "Away from immediate pre/post workout windows for better digestion"
       }
     };
   }
 
+  // Pre-workout nutrition based on training intensity
   getPreWorkoutNutrition(intensity, goal) {
     if (intensity === 'High' || intensity === 'Very High') {
       return goal === 'Weight Loss' ? 
-        'Light carbs: banana or small energy bar (30-45g carbs)' :
-        'Carb-rich meal: oatmeal with banana and honey (60-80g carbs)';
+        'Light carbs: banana or small energy bar (30-45g carbs) 1-2 hours before' :
+        'Carb-rich meal: oatmeal with banana and honey (60-80g carbs) 2-3 hours before';
+    } else if (intensity === 'Moderate') {
+      return 'Light snack: toast with jam or banana (30-40g carbs) 1 hour before';
     }
-    return 'Light snack if needed: toast with jam or banana (30g carbs)';
+    return 'Light snack only if needed - focus on hydration for easy sessions';
   }
 
+  // During workout nutrition based on duration and intensity
   getDuringWorkoutNutrition(duration, intensity) {
     if (duration > 90 && (intensity === 'High' || intensity === 'Very High')) {
-      return 'Sports drink: 30-60g carbs per hour after first 60 minutes';
-    } else if (duration > 60) {
-      return 'Light sports drink or water with electrolytes (15-30g carbs/hour)';
+      return 'Sports drink: 30-60g carbs per hour after first 60 minutes (critical for performance)';
+    } else if (duration > 60 && intensity !== 'Low') {
+      return 'Light sports drink or water with electrolytes: 15-30g carbs/hour';
+    } else if (duration > 0) {
+      return 'Water with electrolytes - session duration doesn\'t require carb fueling';
     }
-    return 'Water only - session too short for carb fueling';
+    return 'Rest day - focus on consistent hydration throughout the day';
   }
 
+  // Post-workout nutrition based on training intensity and goals
   getPostWorkoutNutrition(intensity, goal) {
     if (intensity === 'High' || intensity === 'Very High') {
       return goal === 'Weight Loss' ?
-        'Protein-focused recovery: protein shake with minimal carbs (25g protein, 15g carbs)' :
-        'Recovery shake: 3:1 carb to protein ratio (60g carbs, 20g protein)';
+        'Protein-focused recovery: protein shake with minimal carbs (25g protein, 15g carbs) within 30 min' :
+        'Recovery shake: 3:1 carb to protein ratio (60g carbs, 20g protein) within 30 minutes';
+    } else if (intensity === 'Moderate') {
+      return 'Balanced meal within 1-2 hours: focus on protein and moderate carbs';
     }
-    return 'Balanced meal within 2 hours: focus on protein and complex carbs';
+    return 'Regular meal timing is fine - no urgent recovery needs for easy sessions';
   }
 
+  // Generate meal suggestions based on calorie targets and goals
   generateMealSuggestions(dailyCalories, goal) {
     const breakfastCals = Math.round(dailyCalories * 0.25);
     const lunchCals = Math.round(dailyCalories * 0.35);
@@ -430,100 +212,194 @@ DO NOT OUTPUT ANYTHING OTHER THAN VALID JSON.`;
         lunch: 'Chicken and rice bowl with black beans',
         dinner: 'Lean beef stir-fry with quinoa',
         snack: 'Protein shake with banana'
+      },
+      'General Fitness': {
+        breakfast: 'Smoothie bowl with protein powder and fruit',
+        lunch: 'Mediterranean bowl with hummus and vegetables',
+        dinner: 'Grilled chicken with roasted vegetables and brown rice',
+        snack: 'Mixed nuts and fruit'
       }
     };
 
     const goalMeals = suggestions[goal] || suggestions['Endurance Performance'];
 
     return [
-      { meal: "Breakfast", description: goalMeals.breakfast, calories: breakfastCals, timing: "2-3 hours before training" },
-      { meal: "Lunch", description: goalMeals.lunch, calories: lunchCals, timing: "Midday fuel" },
-      { meal: "Dinner", description: goalMeals.dinner, calories: dinnerCals, timing: "Evening recovery" },
-      { meal: "Snack", description: goalMeals.snack, calories: snackCals, timing: "Between meals or post-workout" }
+      {
+        meal: "Breakfast",
+        description: goalMeals.breakfast,
+        calories: breakfastCals,
+        timing: "2-3 hours before morning training, or 1 hour after if training first"
+      },
+      {
+        meal: "Lunch", 
+        description: goalMeals.lunch,
+        calories: lunchCals,
+        timing: "Midday fuel - can be post-workout recovery meal if training AM"
+      },
+      {
+        meal: "Dinner",
+        description: goalMeals.dinner, 
+        calories: dinnerCals,
+        timing: "Evening recovery and preparation for next day's training"
+      },
+      {
+        meal: "Snack",
+        description: goalMeals.snack,
+        calories: snackCals,
+        timing: "Between meals or post-workout if main meal is delayed"
+      }
     ];
   }
 
+  // Supplement recommendations based on training phase and goals
   getSupplementRecommendations(phase, goal) {
     const base = [
-      { name: 'Vitamin D3', dosage: '2000 IU', timing: 'With breakfast', purpose: 'Bone health and immune function' },
-      { name: 'Omega-3', dosage: '1000mg EPA/DHA', timing: 'With dinner', purpose: 'Anti-inflammatory support and recovery' }
+      { 
+        name: 'Vitamin D3', 
+        dosage: '2000 IU', 
+        timing: 'With breakfast', 
+        purpose: 'Bone health, immune function, and recovery support' 
+      },
+      { 
+        name: 'Omega-3 Fish Oil', 
+        dosage: '1000mg EPA/DHA', 
+        timing: 'With dinner', 
+        purpose: 'Anti-inflammatory support, joint health, and recovery' 
+      }
     ];
     
     if (phase === 'Build' || phase === 'Peak') {
       base.push({
-        name: 'Magnesium',
+        name: 'Magnesium Glycinate',
         dosage: '400mg',
         timing: 'Before bed',
-        purpose: 'Muscle recovery and sleep quality during intense training'
+        purpose: 'Muscle recovery, sleep quality, and stress management during intense training'
       });
     }
 
     if (goal === 'Muscle Gain') {
       base.push({
-        name: 'Creatine',
-        dosage: '5g',
-        timing: 'Post-workout',
-        purpose: 'Strength and power development'
+        name: 'Creatine Monohydrate',
+        dosage: '5g daily',
+        timing: 'Post-workout or anytime',
+        purpose: 'Strength, power development, and muscle mass gains'
+      });
+    } else if (goal === 'Weight Loss') {
+      base.push({
+        name: 'Green Tea Extract',
+        dosage: '400mg',
+        timing: 'Between meals',
+        purpose: 'Metabolism support and antioxidant benefits'
       });
     }
     
     return base;
   }
 
-  // Mock daily nutrition
+  // Mock daily nutrition (enhanced with real training consideration)
   generateMockDailyNutrition(userData) {
     const { athlete, trainingData } = userData;
-    const activity = trainingData?.todaysActivity || { type: 'Rest Day', duration: 0, intensity: 'Rest', tss: 0 };
+    const activity = trainingData?.todaysActivity || { 
+      type: 'Rest Day', 
+      duration: 0, 
+      intensity: 'Rest', 
+      tss: 0 
+    };
     
     return {
       preWorkout: {
-        timing: "1-2 hours before training",
-        meal: activity.intensity === 'High' ? 
+        timing: activity.duration > 0 ? "1-2 hours before training" : "N/A - Rest Day",
+        meal: activity.intensity === 'High' || activity.intensity === 'Very High' ? 
           "Oatmeal with banana and honey + coffee" : 
-          "Toast with jam + coffee",
-        rationale: `For your ${activity.intensity?.toLowerCase()} intensity ${activity.type?.toLowerCase()} session`
+          activity.intensity === 'Moderate' ? "Toast with jam + coffee" : "Light breakfast only",
+        rationale: activity.duration > 0 ? 
+          `Optimized for your ${activity.intensity?.toLowerCase()} intensity ${activity.type?.toLowerCase()} session (${activity.duration} min)` :
+          "Rest day - focus on balanced nutrition without pre-workout fueling"
       },
       duringWorkout: {
-        timing: "Every 20-30 minutes during exercise",
-        fuel: activity.duration > 60 ? 
+        timing: activity.duration > 60 ? "Every 20-30 minutes during exercise" : "N/A",
+        fuel: activity.duration > 90 ? 
           "Sports drink targeting 30-60g carbs/hour" : 
-          activity.duration > 0 ? "Water with electrolytes" : "Rest day - focus on hydration",
+          activity.duration > 60 ? "Water with electrolytes" : 
+          activity.duration > 0 ? "Water only" : "Rest day - focus on hydration",
         rationale: activity.duration > 60 ? 
-          `${activity.duration}min session needs carb replenishment` : 
-          `${activity.duration}min session - hydration focus`
+          `${activity.duration} minute session requires ${activity.duration > 90 ? 'carbohydrate' : 'electrolyte'} replacement` : 
+          activity.duration > 0 ? 
+          `${activity.duration} minute session - water sufficient` :
+          "Rest day - maintain steady hydration throughout day"
       },
       postWorkout: {
-        timing: "Within 30 minutes",
+        timing: activity.tss > 0 ? "Within 30-60 minutes post-workout" : "Regular meal timing",
         meal: activity.tss > 70 ? 
-          "Recovery shake: protein + carbs + fruit" : 
-          activity.tss > 0 ? "Protein shake with moderate carbs" : "Focus on balanced meals",
-        rationale: activity.tss > 0 ? 
-          `TSS ${activity.tss} - prioritize recovery nutrition` : 
-          "Rest day - steady nutrient intake"
+          "Recovery shake: protein + carbs + fruit (3:1 carb:protein ratio)" : 
+          activity.tss > 30 ? "Protein shake with moderate carbs" : 
+          activity.tss > 0 ? "Balanced meal within 2 hours" : "Regular balanced meals",
+        rationale: activity.tss > 50 ? 
+          `TSS ${activity.tss} indicates significant stress - prioritize recovery nutrition` : 
+          activity.tss > 0 ?
+          `TSS ${activity.tss} - moderate recovery needs` :
+          "Rest day - focus on consistent, balanced nutrition"
       },
-      hydrationGoal: `${Math.round(35 * (athlete?.weight || 70))}ml base + ${Math.round(activity.duration * 8)}ml training`,
-      racePrep: `Based on your real Strava data! ${this.hasClaudeAPI ? '(Claude API available)' : '(Add Claude API key for AI recommendations)'}`
+      hydrationGoal: `${Math.round(35 * (athlete?.weight || 70))}ml base hydration + ${Math.round((activity.duration || 0) * 8)}ml for training = ${Math.round(35 * (athlete?.weight || 70)) + Math.round((activity.duration || 0) * 8)}ml total`,
+      racePrep: trainingData?.currentPhase === 'Peak' ? 
+        "Peak phase: Lock in race nutrition - no experiments!" :
+        trainingData?.currentPhase === 'Build' ?
+        "Build phase: Good time to test race-day nutrition strategies" :
+        "Focus on consistent daily nutrition habits based on your real Strava training data"
     };
   }
 
+  // Mock meal plan (enhanced)
   generateMockMealPlan(userData, nutritionPlan) {
+    const { athlete, activities } = userData;
+    const dailyCalories = nutritionPlan?.dailyCalories || 2500;
+    
     return {
       weeklyPlan: [
         {
           day: 1,
-          trainingDay: true,
+          trainingDay: activities?.[0]?.type !== 'Rest Day',
           meals: {
-            breakfast: { name: "Training Day Oatmeal Bowl", calories: 450, carbs: 65, protein: 15, fat: 12 },
-            lunch: { name: "Power Quinoa Bowl", calories: 520, carbs: 68, protein: 22, fat: 18 },
-            dinner: { name: "Recovery Salmon Plate", calories: 580, carbs: 45, protein: 35, fat: 22 }
+            breakfast: { 
+              name: "Training Day Oatmeal Bowl", 
+              calories: Math.round(dailyCalories * 0.25), 
+              carbs: 65, 
+              protein: 15, 
+              fat: 12 
+            },
+            lunch: { 
+              name: "Power Quinoa Bowl", 
+              calories: Math.round(dailyCalories * 0.35), 
+              carbs: 68, 
+              protein: 22, 
+              fat: 18 
+            },
+            dinner: { 
+              name: "Recovery Salmon Plate", 
+              calories: Math.round(dailyCalories * 0.30), 
+              carbs: 45, 
+              protein: 35, 
+              fat: 22 
+            }
+          },
+          dailyTotals: { 
+            calories: dailyCalories, 
+            carbs: nutritionPlan?.macros?.carbs?.grams || 350, 
+            protein: nutritionPlan?.macros?.protein?.grams || 140, 
+            fat: nutritionPlan?.macros?.fat?.grams || 93 
           }
         }
       ],
-      shoppingList: ["oats", "banana", "quinoa", "salmon", "sweet potato", "spinach", "almonds"],
+      shoppingList: [
+        "rolled oats", "bananas", "quinoa", "salmon fillets", 
+        "sweet potatoes", "spinach", "almonds", "Greek yogurt",
+        "chicken breast", "brown rice", "broccoli", "olive oil"
+      ],
       prepTips: [
-        "Prep overnight oats for easy breakfast",
-        "Cook grains in batches on Sunday",
-        "Pre-cut vegetables for quick assembly"
+        "Prep overnight oats Sunday for the week",
+        "Cook grains (quinoa, brown rice) in large batches",
+        "Pre-cut vegetables for quick meal assembly",
+        "Marinate proteins the night before cooking"
       ]
     };
   }
