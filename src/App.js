@@ -1,17 +1,16 @@
-// src/App.js - Enhanced with Food Preferences and Daily Food Logging
-
+// src/App.js - Complete Fixed Version
 import React, { useState, useEffect, useCallback } from 'react';
 import { Activity, Calendar, Download, RefreshCw, Settings, AlertCircle, Zap, Brain } from 'lucide-react';
 
 // Import services
 import stravaService from './services/stravaService';
-import nutritionService from './services/nutritionService'; // Enhanced food-aware version
+import nutritionService from './services/nutritionService';
 
 // Import components
 import StravaAuth from './components/StravaAuth';
-import DashboardView from './components/DashboardView'; // Enhanced version
+import DashboardView from './components/DashboardView';
 import CalendarView from './components/CalendarView';
-import SettingsView from './components/SettingsView'; // Enhanced version
+import SettingsView from './components/SettingsView';
 import AddEventModal from './components/AddEventModal';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -20,7 +19,7 @@ import { processStravaActivities, calculateWeeklyTSS, analyzeTrainingPhase } fro
 import { loadEventsFromStorage, saveEventsToStorage } from './utils/storageUtils';
 
 const App = () => {
-  // Existing state
+  // Core state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [athlete, setAthlete] = useState(null);
   const [activities, setActivities] = useState([]);
@@ -32,7 +31,6 @@ const App = () => {
   const [nutritionPlan, setNutritionPlan] = useState(null);
   const [dailyNutrition, setDailyNutrition] = useState(null);
   const [dailyWorkout, setDailyWorkout] = useState(null);
-  const [mealPlan, setMealPlan] = useState(null);
   const [generatingNutrition, setGeneratingNutrition] = useState(false);
   const [generatingWorkout, setGeneratingWorkout] = useState(false);
 
@@ -42,7 +40,7 @@ const App = () => {
   const [seasonType, setSeasonType] = useState('off-season');
   const [lastSync, setLastSync] = useState(null);
 
-  // NEW: Food preferences and logging state
+  // Food preferences and logging
   const [foodPreferences, setFoodPreferences] = useState(() => {
     const saved = localStorage.getItem('trainfuel_food_preferences');
     return saved ? JSON.parse(saved) : { likedFoods: [], dislikedFoods: [] };
@@ -53,21 +51,19 @@ const App = () => {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // UI State
+  // UI state
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [showAddEvent, setShowAddEvent] = useState(false);
-  const [showMealDetails, setShowMealDetails] = useState(false);
+  const [showAddEventModal, setShowAddEventModal] = useState(false);
   const [upcomingEvents, setUpcomingEvents] = useState(loadEventsFromStorage());
 
-  // AI Features toggle
+  // AI features
   const [aiRecommendationsEnabled, setAiRecommendationsEnabled] = useState(() => {
     const saved = localStorage.getItem('trainfuel_ai_enabled');
     return saved ? JSON.parse(saved) : false;
   });
-
   const [lastAiUpdate, setLastAiUpdate] = useState(null);
 
-  // Save preferences to localStorage when they change
+  // Save preferences to localStorage
   useEffect(() => {
     localStorage.setItem('trainfuel_food_preferences', JSON.stringify(foodPreferences));
   }, [foodPreferences]);
@@ -80,7 +76,11 @@ const App = () => {
     localStorage.setItem('trainfuel_ai_enabled', JSON.stringify(aiRecommendationsEnabled));
   }, [aiRecommendationsEnabled]);
 
-  // Check for existing authentication
+  useEffect(() => {
+    saveEventsToStorage(upcomingEvents);
+  }, [upcomingEvents]);
+
+  // Check authentication on mount
   useEffect(() => {
     const checkAuth = async () => {
       const urlParams = new URLSearchParams(window.location.search);
@@ -93,7 +93,6 @@ const App = () => {
           const result = await stravaService.exchangeToken(code);
           setAthlete(result.athlete);
           setIsAuthenticated(true);
-          // Clear the code from URL
           window.history.replaceState({}, document.title, window.location.pathname);
         } catch (err) {
           setError('Failed to authenticate with Strava');
@@ -123,25 +122,62 @@ const App = () => {
     }
   }, [isAuthenticated, athlete]);
 
-  // Generate AI recommendations when training data is available
+  // Generate AI recommendations when data is available
   useEffect(() => {
     if (trainingData && athlete && aiRecommendationsEnabled) {
       generateAIRecommendations();
     }
   }, [trainingData, athlete, aiRecommendationsEnabled]);
 
+  // Fetch Strava activities
   const fetchActivities = async () => {
     setLoading(true);
     setError(null);
     try {
-      // stravaService handles the token internally
       const fetchedActivities = await stravaService.getActivities();
+      
+      // Handle empty or invalid response
+      if (!fetchedActivities || !Array.isArray(fetchedActivities)) {
+        console.log('No activities returned from Strava');
+        setActivities([]);
+        setTrainingData({
+          weeklyTSS: 0,
+          phase: 'Base',
+          activities: [],
+          currentPhase: 'Base',
+          todaysActivity: {
+            type: 'Rest Day',
+            duration: 0,
+            intensity: 'Rest',
+            tss: 0
+          }
+        });
+        return;
+      }
+
       const processed = processStravaActivities(fetchedActivities);
       setActivities(processed);
 
+      // Fix: Pass activities array to analyzeTrainingPhase, not TSS number
       const tssData = calculateWeeklyTSS(processed);
-      const phase = analyzeTrainingPhase(tssData);
-      setTrainingData({ weeklyTSS: tssData, phase, activities: processed });
+      const phase = analyzeTrainingPhase(processed); // Changed from analyzeTrainingPhase(tssData)
+      
+      const todaysActivity = processed.find(activity =>
+        activity.date === new Date().toISOString().split('T')[0]
+      ) || processed[0];
+
+      setTrainingData({ 
+        weeklyTSS: tssData, 
+        phase, 
+        activities: processed,
+        currentPhase: phase,
+        todaysActivity: todaysActivity || {
+          type: 'Rest Day',
+          duration: 0,
+          intensity: 'Rest',
+          tss: 0
+        }
+      });
 
       setLastSync(new Date());
     } catch (err) {
@@ -152,7 +188,7 @@ const App = () => {
     }
   };
 
-  // Fallback to existing logic if AI fails - Using useCallback to prevent redeclaration
+  // Fallback recommendations (only ONE declaration using useCallback)
   const generateFallbackRecommendations = useCallback(async () => {
     try {
       const userData = {
@@ -165,23 +201,22 @@ const App = () => {
         dailyFoodLog
       };
 
-      // Use enhanced mock/intelligent recommendations as fallback
-      const fallbackNutrition = await nutritionService.generateIntelligentMockPlan(userData);
+      const fallbackNutrition = await nutritionService.generateNutritionPlan(userData);
       setNutritionPlan(fallbackNutrition);
 
       const fallbackDaily = await nutritionService.generateMockDailyNutrition(userData);
       setDailyNutrition(fallbackDaily);
 
     } catch (err) {
-      console.error('❌ Even fallback recommendations failed:', err);
+      console.error('Even fallback recommendations failed:', err);
     }
   }, [athlete, trainingData, activities, trainingGoal, dietaryRestrictions, seasonType, upcomingEvents, foodPreferences, dailyFoodLog]);
 
-  // Enhanced AI recommendations generation with food data
+  // AI recommendations generation
   const generateAIRecommendations = useCallback(async () => {
     if (!trainingData || !athlete) return;
 
-    console.log('🧠 Generating AI-powered recommendations with food preferences...');
+    console.log('Generating AI-powered recommendations...');
     setGeneratingNutrition(true);
 
     try {
@@ -199,79 +234,33 @@ const App = () => {
         dailyFoodLog
       };
 
-      // Generate nutrition plan with Claude AI
-      console.log('🍎 Getting AI nutrition plan with food preferences...');
-      const aiNutritionPlan = await nutritionService.generateNutritionPlan(userData);
-      setNutritionPlan(aiNutritionPlan);
+      // Generate with AI or fallback
+      const nutritionPlan = await nutritionService.generateNutritionPlan(userData);
+      setNutritionPlan(nutritionPlan);
 
-      // Generate daily nutrition recommendations
-      console.log('🥗 Getting daily nutrition recommendations with food log...');
-      const aiDailyNutrition = await nutritionService.generateDailyNutrition(userData);
-      setDailyNutrition(aiDailyNutrition);
+      const dailyNutrition = await nutritionService.generateMockDailyNutrition(userData);
+      setDailyNutrition(dailyNutrition);
 
-      // Generate training recommendations
-      console.log('🏃 Getting training recommendations with nutrition awareness...');
-      const aiWorkoutPlan = await nutritionService.generateTrainingRecommendations(userData);
-      setDailyWorkout(aiWorkoutPlan);
+      const workoutPlan = await nutritionService.generateMockWorkout?.(userData) || {
+        type: 'Recovery',
+        duration: '45 minutes',
+        intensity: 'Zone 2',
+        focus: 'Active recovery'
+      };
+      setDailyWorkout(workoutPlan);
 
       setLastAiUpdate(new Date());
-      console.log('✅ AI recommendations generated successfully with food data!');
 
     } catch (err) {
-      console.error('❌ Error generating AI recommendations:', err);
-      setError(`AI recommendations failed: ${err.message}. Using fallback recommendations.`);
-
-      // Still try to generate fallback recommendations
+      console.error('Error generating AI recommendations:', err);
+      setError(`AI recommendations failed: ${err.message}`);
       await generateFallbackRecommendations();
     } finally {
       setGeneratingNutrition(false);
     }
   }, [trainingData, athlete, activities, trainingGoal, dietaryRestrictions, seasonType, upcomingEvents, foodPreferences, dailyFoodLog, generateFallbackRecommendations]);
 
-  // NEW: Regenerate recommendations with current food data
-  const regenerateWithFoodData = async (currentFoodData) => {
-    if (!trainingData || !athlete) return;
-
-    console.log('🔄 Regenerating recommendations with current food intake...');
-    setGeneratingNutrition(true);
-
-    try {
-      const userData = {
-        athlete,
-        trainingData,
-        activities,
-        preferences: { trainingGoal, dietaryRestrictions, seasonType },
-        upcomingEvents,
-        foodPreferences,
-        dailyFoodLog
-      };
-
-      // Generate updated recommendations based on current food data
-      const updatedRecommendations = await nutritionService.generateWithFoodData(userData, currentFoodData);
-
-      // Update daily nutrition with new recommendations
-      setDailyNutrition(prev => ({
-        ...prev,
-        ...updatedRecommendations,
-        lastUpdated: new Date().toISOString()
-      }));
-
-      // Also regenerate training recommendations with nutrition awareness
-      const updatedWorkout = await nutritionService.generateTrainingRecommendations(userData);
-      setDailyWorkout(updatedWorkout);
-
-      setLastAiUpdate(new Date());
-      console.log('✅ Recommendations updated with current food data!');
-
-    } catch (err) {
-      console.error('❌ Error updating recommendations with food data:', err);
-      setError(`Failed to update recommendations: ${err.message}`);
-    } finally {
-      setGeneratingNutrition(false);
-    }
-  };
-
-  // Enhanced manual nutrition generation
+  // Manual nutrition generation
   const generateDailyNutrition = async () => {
     setGeneratingNutrition(true);
     try {
@@ -285,18 +274,11 @@ const App = () => {
         dailyFoodLog
       };
 
-      if (aiRecommendationsEnabled) {
-        console.log('🧠 Generating AI daily nutrition with food preferences...');
-        const aiDailyNutrition = await nutritionService.generateDailyNutrition(userData);
-        setDailyNutrition(aiDailyNutrition);
-      } else {
-        console.log('📋 Generating standard daily nutrition with food preferences...');
-        const standardNutrition = await nutritionService.generateMockDailyNutrition(userData);
-        setDailyNutrition(standardNutrition);
-      }
+      const nutrition = await nutritionService.generateMockDailyNutrition(userData);
+      setDailyNutrition(nutrition);
 
     } catch (err) {
-      console.error('❌ Error generating daily nutrition:', err);
+      console.error('Error generating daily nutrition:', err);
       await generateFallbackRecommendations();
     } finally {
       setGeneratingNutrition(false);
@@ -317,45 +299,52 @@ const App = () => {
         dailyFoodLog
       };
 
-      if (aiRecommendationsEnabled) {
-        console.log('🏃 Generating AI workout plan...');
-        const aiWorkout = await nutritionService.generateTrainingRecommendations(userData);
-        setDailyWorkout(aiWorkout);
-      } else {
-        console.log('📋 Generating standard workout plan...');
-        const standardWorkout = await nutritionService.generateMockWorkout(userData);
-        setDailyWorkout(standardWorkout);
-      }
-
-    } catch (err) {
-      console.error('❌ Error generating workout:', err);
-      // Generate fallback workout
-      const fallbackWorkout = {
-        type: 'Easy Recovery',
+      const workout = await nutritionService.generateMockWorkout?.(userData) || {
+        type: 'Easy Run',
         duration: '45 minutes',
         intensity: 'Zone 2',
-        focus: 'Active recovery and movement',
-        notes: 'Keep it easy today for recovery'
+        focus: 'Aerobic base building'
       };
-      setDailyWorkout(fallbackWorkout);
+      setDailyWorkout(workout);
+
+    } catch (err) {
+      console.error('Error generating workout:', err);
+      setDailyWorkout({
+        type: 'Recovery',
+        duration: '30 minutes',
+        intensity: 'Easy',
+        focus: 'Active recovery'
+      });
     } finally {
       setGeneratingWorkout(false);
     }
   };
 
-  const handleAddEvent = (event) => {
-    const newEvents = [...upcomingEvents, { ...event, id: Date.now() }];
-    setUpcomingEvents(newEvents);
-    saveEventsToStorage(newEvents);
-    setShowAddEvent(false);
+  // Event management
+  const addEvent = (event) => {
+    const newEvent = {
+      ...event,
+      id: Date.now().toString(),
+      createdAt: new Date().toISOString()
+    };
+    setUpcomingEvents([...upcomingEvents, newEvent]);
   };
 
-  const handleDeleteEvent = (eventId) => {
-    const filtered = upcomingEvents.filter(e => e.id !== eventId);
-    setUpcomingEvents(filtered);
-    saveEventsToStorage(filtered);
+  const deleteEvent = (eventId) => {
+    setUpcomingEvents(upcomingEvents.filter(e => e.id !== eventId));
   };
 
+  const clearAllEvents = () => {
+    setUpcomingEvents([]);
+  };
+
+  // Handle Strava connection
+  const handleStravaConnect = () => {
+    const authUrl = stravaService.getAuthUrl();
+    window.location.href = authUrl;
+  };
+
+  // Handle refresh
   const handleRefresh = async () => {
     await fetchActivities();
     if (aiRecommendationsEnabled) {
@@ -363,6 +352,7 @@ const App = () => {
     }
   };
 
+  // Handle export
   const handleExportData = () => {
     const exportData = {
       athlete,
@@ -374,14 +364,17 @@ const App = () => {
       dailyFoodLog,
       exportDate: new Date().toISOString()
     };
+    
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `trainfuel-data-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
+    URL.revokeObjectURL(url);
   };
 
+  // Toggle AI recommendations
   const toggleAIRecommendations = () => {
     setAiRecommendationsEnabled(!aiRecommendationsEnabled);
     if (!aiRecommendationsEnabled) {
@@ -389,50 +382,38 @@ const App = () => {
     }
   };
 
-  // NEW: Add food preference
-  const addFoodPreference = (food, type) => {
-    setFoodPreferences(prev => {
-      const updated = { ...prev };
-      if (type === 'like') {
-        updated.likedFoods = [...(prev.likedFoods || []), food];
-        updated.dislikedFoods = (prev.dislikedFoods || []).filter(f => f !== food);
-      } else {
-        updated.dislikedFoods = [...(prev.dislikedFoods || []), food];
-        updated.likedFoods = (prev.likedFoods || []).filter(f => f !== food);
-      }
-      return updated;
-    });
+  // Update functions for child components
+  const updateFoodPreferences = (newPreferences) => {
+    setFoodPreferences(newPreferences);
   };
 
-  // NEW: Log daily food
-  const logFood = (foodEntry) => {
-    const entry = {
-      ...foodEntry,
-      date: new Date().toISOString().split('T')[0],
-      timestamp: new Date().toISOString()
-    };
-    setDailyFoodLog(prev => [...prev, entry]);
+  const updateDailyFoodLog = (newLog) => {
+    setDailyFoodLog(newLog);
   };
 
-  // Helper functions for UI
-  const getWorkoutType = (activities) => {
-    if (!activities || activities.length === 0) return 'Recovery';
-    const lastActivity = activities[0];
-    const daysSinceLastWorkout = Math.floor((new Date() - new Date(lastActivity.start_date)) / (1000 * 60 * 60 * 24));
-    return daysSinceLastWorkout > 1 ? 'Build' : 'Recovery';
+  const regenerateWithFoodData = async (currentFoodData) => {
+    console.log('Regenerating with food data:', currentFoodData);
+    await generateAIRecommendations();
   };
 
-  const calculateTargetRPE = (activities, seasonType) => {
-    if (seasonType === 'in-season') return '7-8';
-    if (!activities || activities.length === 0) return '6-7';
-    const recentIntensity = activities[0]?.intensity;
-    return recentIntensity === 'High' ? '4-5' : '6-7';
+  const handleTrainingGoalChange = (goal) => {
+    setTrainingGoal(goal);
   };
 
-  // Handle Strava connection
-  const handleStravaConnect = () => {
-    const authUrl = stravaService.getAuthUrl();
-    window.location.href = authUrl;
+  const handleDietaryRestrictionsChange = (restrictions) => {
+    setDietaryRestrictions(restrictions);
+  };
+
+  const handleAIToggle = () => {
+    toggleAIRecommendations();
+  };
+
+  const handleDisconnectStrava = () => {
+    stravaService.logout();
+    setIsAuthenticated(false);
+    setAthlete(null);
+    setActivities([]);
+    setTrainingData(null);
   };
 
   return (
@@ -461,11 +442,6 @@ const App = () => {
                         AI updated: {lastAiUpdate.toLocaleTimeString()}
                       </div>
                     )}
-                    {foodPreferences?.likedFoods?.length > 0 && (
-                      <div className="text-xs text-green-600">
-                        {foodPreferences.likedFoods.length} food preferences • {dailyFoodLog.filter(entry => entry.date === new Date().toISOString().split('T')[0]).length} foods logged today
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -479,40 +455,38 @@ const App = () => {
                 )}
 
                 {isAuthenticated && (
-                  <button
-                    onClick={handleRefresh}
-                    disabled={loading || generatingNutrition}
-                    className="flex items-center space-x-2 bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                    <span className="text-sm">{loading ? 'Syncing...' : 'Sync'}</span>
-                  </button>
-                )}
+                  <>
+                    <button
+                      onClick={handleRefresh}
+                      disabled={loading || generatingNutrition}
+                      className="flex items-center space-x-2 bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                      <span className="text-sm">{loading ? 'Syncing...' : 'Sync'}</span>
+                    </button>
 
-                {isAuthenticated && (
-                  <button
-                    onClick={handleExportData}
-                    className="flex items-center space-x-2 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
-                  >
-                    <Download className="h-4 w-4" />
-                    <span className="text-sm">Export</span>
-                  </button>
-                )}
+                    <button
+                      onClick={handleExportData}
+                      className="flex items-center space-x-2 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+                    >
+                      <Download className="h-4 w-4" />
+                      <span className="text-sm">Export</span>
+                    </button>
 
-                {isAuthenticated && (
-                  <button
-                    onClick={toggleAIRecommendations}
-                    className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                      aiRecommendationsEnabled 
-                        ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    <Zap className="h-4 w-4" />
-                    <span className="text-sm">
-                      {aiRecommendationsEnabled ? 'AI On' : 'AI Off'}
-                    </span>
-                  </button>
+                    <button
+                      onClick={toggleAIRecommendations}
+                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                        aiRecommendationsEnabled 
+                          ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      <Zap className="h-4 w-4" />
+                      <span className="text-sm">
+                        {aiRecommendationsEnabled ? 'AI On' : 'AI Off'}
+                      </span>
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -551,66 +525,67 @@ const App = () => {
             <>
               {activeTab === 'dashboard' && (
                 <DashboardView
-                  athlete={athlete}
-                  activities={activities}
+                  isAuthenticated={isAuthenticated}
+                  loading={loading}
                   trainingData={trainingData}
                   nutritionPlan={nutritionPlan}
                   dailyNutrition={dailyNutrition}
                   dailyWorkout={dailyWorkout}
-                  loading={loading}
-                  lastSync={lastSync}
-                  upcomingEvents={upcomingEvents}
-                  onAddEvent={() => setShowAddEvent(true)}
-                  onDeleteEvent={handleDeleteEvent}
-                  generateDailyNutrition={generateDailyNutrition}
-                  generateDailyWorkout={generateDailyWorkout}
                   generatingNutrition={generatingNutrition}
                   generatingWorkout={generatingWorkout}
+                  handleGenerateNutrition={generateDailyNutrition}
+                  handleGenerateWorkout={generateDailyWorkout}
+                  upcomingEvents={upcomingEvents}
+                  setShowAddEventModal={setShowAddEventModal}
                   aiRecommendationsEnabled={aiRecommendationsEnabled}
+                  lastAiUpdate={lastAiUpdate}
                   foodPreferences={foodPreferences}
+                  onUpdateFoodPreferences={updateFoodPreferences}
                   dailyFoodLog={dailyFoodLog}
-                  addFoodPreference={addFoodPreference}
-                  logFood={logFood}
-                  regenerateWithFoodData={regenerateWithFoodData}
+                  onUpdateDailyFoodLog={updateDailyFoodLog}
+                  onRegenerateWithFoodData={regenerateWithFoodData}
                 />
               )}
 
               {activeTab === 'calendar' && (
                 <CalendarView
+                  isAuthenticated={isAuthenticated}
                   activities={activities}
-                  upcomingEvents={upcomingEvents}
-                  nutritionPlan={nutritionPlan}
                 />
               )}
 
               {activeTab === 'settings' && (
                 <SettingsView
+                  isAuthenticated={isAuthenticated}
                   athlete={athlete}
                   trainingGoal={trainingGoal}
-                  setTrainingGoal={setTrainingGoal}
+                  onTrainingGoalChange={handleTrainingGoalChange}
                   dietaryRestrictions={dietaryRestrictions}
-                  setDietaryRestrictions={setDietaryRestrictions}
+                  onDietaryRestrictionsChange={handleDietaryRestrictionsChange}
                   seasonType={seasonType}
-                  setSeasonType={setSeasonType}
-                  onUpdatePreferences={() => {
-                    if (aiRecommendationsEnabled) {
-                      generateAIRecommendations();
-                    }
-                  }}
+                  onSeasonTypeChange={setSeasonType}
+                  lastSync={lastSync}
+                  upcomingEvents={upcomingEvents}
+                  onClearAllEvents={clearAllEvents}
+                  onRefresh={handleRefresh}
+                  aiRecommendationsEnabled={aiRecommendationsEnabled}
+                  onAIToggle={handleAIToggle}
+                  onDisconnect={handleDisconnectStrava}
                   foodPreferences={foodPreferences}
-                  setFoodPreferences={setFoodPreferences}
+                  onUpdateFoodPreferences={updateFoodPreferences}
+                  dailyFoodLog={dailyFoodLog}
                 />
               )}
             </>
           )}
-        </main>
 
-        {showAddEvent && (
           <AddEventModal
-            onClose={() => setShowAddEvent(false)}
-            onSave={handleAddEvent}
+            show={showAddEventModal}
+            onClose={() => setShowAddEventModal(false)}
+            onAddEvent={addEvent}
+            minDate={new Date().toISOString().split('T')[0]}
           />
-        )}
+        </main>
       </div>
     </ErrorBoundary>
   );
