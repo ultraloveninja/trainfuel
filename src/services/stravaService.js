@@ -28,14 +28,14 @@ class StravaService {
       });
 
       const { access_token, refresh_token, athlete } = response.data;
-      
+
       localStorage.setItem('strava_access_token', access_token);
       localStorage.setItem('strava_refresh_token', refresh_token);
       localStorage.setItem('strava_athlete', JSON.stringify(athlete));
-      
+
       this.accessToken = access_token;
       this.refreshToken = refresh_token;
-      
+
       return { access_token, refresh_token, athlete };
     } catch (error) {
       console.error('Error exchanging token:', error);
@@ -80,7 +80,7 @@ class StravaService {
       if (error.response?.status === 401) {
         // Token expired, try refresh
         await this.refreshTokens();
-        // Retry request
+        // Retry request with new token
         const response = await axios.get(`${STRAVA_BASE_URL}${endpoint}`, {
           headers: {
             'Authorization': `Bearer ${this.accessToken}`
@@ -107,13 +107,13 @@ class StravaService {
       });
 
       const { access_token, refresh_token } = response.data;
-      
+
       localStorage.setItem('strava_access_token', access_token);
       localStorage.setItem('strava_refresh_token', refresh_token);
-      
+
       this.accessToken = access_token;
       this.refreshToken = refresh_token;
-      
+
       return access_token;
     } catch (error) {
       console.error('Error refreshing token:', error);

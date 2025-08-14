@@ -80,13 +80,20 @@ const App = () => {
   }, [seasonType, trainingData?.todaysActivity, upcomingEvents]);
 
   const handleStravaCallback = async (code) => {
+    console.log('Starting Strava authentication...');
     setLoading(true);
-    setError(null);
+    setError(null); // This line was truncated in your version - it was just "setErro"
+
     try {
       const result = await stravaService.exchangeToken(code);
+      console.log('Authentication successful!');
+
       setIsAuthenticated(true);
       setAthlete(result.athlete);
+
+      // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
+
       await loadStravaData();
     } catch (err) {
       console.error('Error during Strava authentication:', err);
@@ -269,7 +276,7 @@ const App = () => {
   const clearAllEvents = () => { setUpcomingEvents([]); localStorage.removeItem('upcoming_events'); };
 
   const addEvent = (event) => {
-    setUpcomingEvents(prev => [...prev, event].sort((a,b)=>a.weeksOut-b.weeksOut));
+    setUpcomingEvents(prev => [...prev, event].sort((a, b) => a.weeksOut - b.weeksOut));
     if (trainingData && athlete) { generateDailyNutrition(); generateDailyWorkout(); }
   };
 
@@ -315,8 +322,8 @@ const App = () => {
         <nav className="bg-white border-b border-gray-200">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex space-x-8">
-              {[ { id: 'dashboard', label: 'Dashboard', icon: Activity }, { id: 'calendar', label: 'Activities', icon: Calendar }, { id: 'settings', label: 'Settings', icon: Activity } ].map(({ id, label, icon: Icon }) => (
-                <button key={id} onClick={()=>setActiveTab(id)} className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm ${activeTab===id ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
+              {[{ id: 'dashboard', label: 'Dashboard', icon: Activity }, { id: 'calendar', label: 'Activities', icon: Calendar }, { id: 'settings', label: 'Settings', icon: Activity }].map(({ id, label, icon: Icon }) => (
+                <button key={id} onClick={() => setActiveTab(id)} className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm ${activeTab === id ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
                   <Icon className="h-4 w-4" /><span>{label}</span>
                 </button>
               ))}
@@ -342,7 +349,7 @@ const App = () => {
             />
           )}
 
-          <AddEventModal show={showAddEventModal} onClose={()=>setShowAddEventModal(false)} onAddEvent={addEvent} minDate={new Date().toISOString().split('T')[0]} />
+          <AddEventModal show={showAddEventModal} onClose={() => setShowAddEventModal(false)} onAddEvent={addEvent} minDate={new Date().toISOString().split('T')[0]} />
         </main>
       </div>
     </ErrorBoundary>
