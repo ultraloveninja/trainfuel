@@ -1,16 +1,20 @@
-// src/App.js - Complete Fixed Version
+// src/App.js - Complete Integration with New Components
 import React, { useState, useEffect, useCallback } from 'react';
-import { Activity, Calendar, Download, RefreshCw, Settings, AlertCircle, Zap, Brain } from 'lucide-react';
+import { Activity, Calendar, Download, RefreshCw, Settings, AlertCircle, Zap, Brain, Home, Utensils } from 'lucide-react';
 
 // Import services
 import stravaService from './services/stravaService';
 import nutritionService from './services/nutritionService';
 
-// Import components
+// Import NEW components
+import WorkoutGenerator from './components/WorkoutGenerator';
+import MealSuggestions from './components/MealSuggestions';
+import SettingsPage from './components/SettingsPage';
+
+// Import existing components
 import StravaAuth from './components/StravaAuth';
 import DashboardView from './components/DashboardView';
 import CalendarView from './components/CalendarView';
-import SettingsView from './components/SettingsView';
 import AddEventModal from './components/AddEventModal';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -27,6 +31,47 @@ const App = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Settings state (NEW)
+  const [userSettings, setUserSettings] = useState(() => {
+    const saved = localStorage.getItem('trainfuelSettings');
+    return saved ? JSON.parse(saved) : {
+      profile: {
+        name: '',
+        age: 46,
+        height: '6\'2"',
+        weight: 204,
+        gender: 'male'
+      },
+      goals: {
+        primaryGoal: 'weight_loss',
+        targetWeight: 195,
+        targetDate: '',
+        currentPhase: 'in_season'
+      },
+      foodPreferences: {
+        dietType: 'balanced',
+        restrictions: [],
+        allergies: [],
+        favoriteFoods: [],
+        dislikedFoods: [],
+        mealPrepDay: 'sunday',
+        cookingTime: 'moderate'
+      },
+      trainingPreferences: {
+        preferredTime: 'morning',
+        alternativeTime: 'afternoon',
+        weeklyHours: 8,
+        raceDistance: 'half_ironman'
+      },
+      notifications: {
+        mealReminders: true,
+        workoutReminders: true,
+        hydrationReminders: true,
+        reminderTime: '07:00'
+      }
+    };
+  });
+
   // Nutrition and AI state
   const [nutritionPlan, setNutritionPlan] = useState(null);
   const [dailyNutrition, setDailyNutrition] = useState(null);
@@ -34,18 +79,7 @@ const App = () => {
   const [generatingNutrition, setGeneratingNutrition] = useState(false);
   const [generatingWorkout, setGeneratingWorkout] = useState(false);
 
-  // User preferences
-  const [trainingGoal, setTrainingGoal] = useState('Endurance Performance');
-  const [dietaryRestrictions, setDietaryRestrictions] = useState('');
-  const [seasonType, setSeasonType] = useState('off-season');
-  const [lastSync, setLastSync] = useState(null);
-
-  // Food preferences and logging
-  const [foodPreferences, setFoodPreferences] = useState(() => {
-    const saved = localStorage.getItem('trainfuel_food_preferences');
-    return saved ? JSON.parse(saved) : { likedFoods: [], dislikedFoods: [] };
-  });
-
+  // Food logging
   const [dailyFoodLog, setDailyFoodLog] = useState(() => {
     const saved = localStorage.getItem('trainfuel_daily_food_log');
     return saved ? JSON.parse(saved) : [];
@@ -59,14 +93,14 @@ const App = () => {
   // AI features
   const [aiRecommendationsEnabled, setAiRecommendationsEnabled] = useState(() => {
     const saved = localStorage.getItem('trainfuel_ai_enabled');
-    return saved ? JSON.parse(saved) : false;
+    return saved ? JSON.parse(saved) : true;
   });
   const [lastAiUpdate, setLastAiUpdate] = useState(null);
 
-  // Save preferences to localStorage
+  // Save settings to localStorage
   useEffect(() => {
-    localStorage.setItem('trainfuel_food_preferences', JSON.stringify(foodPreferences));
-  }, [foodPreferences]);
+    localStorage.setItem('trainfuelSettings', JSON.stringify(userSettings));
+  }, [userSettings]);
 
   useEffect(() => {
     localStorage.setItem('trainfuel_daily_food_log', JSON.stringify(dailyFoodLog));
@@ -136,186 +170,78 @@ const App = () => {
     try {
       const fetchedActivities = await stravaService.getActivities();
       
-      // Handle empty or invalid response
       if (!fetchedActivities || !Array.isArray(fetchedActivities)) {
         console.log('No activities returned from Strava');
         setActivities([]);
-        setTrainingData({
-          weeklyTSS: 0,
-          phase: 'Base',
-          activities: [],
-          currentPhase: 'Base',
-          todaysActivity: {
-            type: 'Rest Day',
-            duration: 0,
-            intensity: 'Rest',
-            tss: 0
-          }
-        });
+        setTrainingData(null);
         return;
       }
 
-      const processed = processStravaActivities(fetchedActivities);
-      setActivities(processed);
-
-      // Fix: Pass activities array to analyzeTrainingPhase, not TSS number
-      const tssData = calculateWeeklyTSS(processed);
-      const phase = analyzeTrainingPhase(processed); // Changed from analyzeTrainingPhase(tssData)
+      setActivities(fetchedActivities);
       
-      const todaysActivity = processed.find(activity =>
-        activity.date === new Date().toISOString().split('T')[0]
-      ) || processed[0];
-
-      setTrainingData({ 
-        weeklyTSS: tssData, 
-        phase, 
+      // Process activities for training data
+      const processed = processStravaActivities(fetchedActivities);
+      const weeklyStats = calculateWeeklyTSS(processed);
+      const phase = analyzeTrainingPhase(processed);
+      
+      setTrainingData({
         activities: processed,
-        currentPhase: phase,
-        todaysActivity: todaysActivity || {
-          type: 'Rest Day',
-          duration: 0,
-          intensity: 'Rest',
-          tss: 0
-        }
+        weeklyStats,
+        phase,
+        lastUpdated: new Date().toISOString()
       });
 
-      setLastSync(new Date());
     } catch (err) {
-      console.error('Error fetching activities:', err);
-      setError('Failed to fetch activities. Please try refreshing.');
+      setError('Failed to fetch activities');
+      console.error('Fetch error:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  // Fallback recommendations (only ONE declaration using useCallback)
-  const generateFallbackRecommendations = useCallback(async () => {
-    try {
-      const userData = {
-        athlete,
-        trainingData,
-        activities,
-        preferences: { trainingGoal, dietaryRestrictions, seasonType },
-        upcomingEvents,
-        foodPreferences,
-        dailyFoodLog
-      };
-
-      const fallbackNutrition = await nutritionService.generateNutritionPlan(userData);
-      setNutritionPlan(fallbackNutrition);
-
-      const fallbackDaily = await nutritionService.generateMockDailyNutrition(userData);
-      setDailyNutrition(fallbackDaily);
-
-    } catch (err) {
-      console.error('Even fallback recommendations failed:', err);
-    }
-  }, [athlete, trainingData, activities, trainingGoal, dietaryRestrictions, seasonType, upcomingEvents, foodPreferences, dailyFoodLog]);
-
-  // AI recommendations generation
-  const generateAIRecommendations = useCallback(async () => {
-    if (!trainingData || !athlete) return;
-
-    console.log('Generating AI-powered recommendations...');
+  // Generate AI recommendations
+  const generateAIRecommendations = async () => {
+    console.log('Generating AI recommendations...');
     setGeneratingNutrition(true);
-
+    setGeneratingWorkout(true);
+    
     try {
       const userData = {
-        athlete,
-        trainingData,
-        activities,
-        preferences: {
-          trainingGoal,
-          dietaryRestrictions,
-          seasonType
+        athlete: {
+          age: userSettings.profile.age,
+          weight: userSettings.profile.weight,
+          height: userSettings.profile.height,
+          gender: userSettings.profile.gender
         },
-        upcomingEvents,
-        foodPreferences,
-        dailyFoodLog
+        trainingData,
+        goals: userSettings.goals,
+        preferences: userSettings.foodPreferences,
+        dietaryRestrictions: userSettings.foodPreferences.restrictions,
+        recentFoodLog: dailyFoodLog.slice(-7) // Last 7 days
       };
 
-      // Generate with AI or fallback
-      const nutritionPlan = await nutritionService.generateNutritionPlan(userData);
-      setNutritionPlan(nutritionPlan);
-
-      const dailyNutrition = await nutritionService.generateMockDailyNutrition(userData);
-      setDailyNutrition(dailyNutrition);
-
-      const workoutPlan = await nutritionService.generateMockWorkout?.(userData) || {
-        type: 'Recovery',
-        duration: '45 minutes',
-        intensity: 'Zone 2',
-        focus: 'Active recovery'
+      // Generate nutrition plan
+      const nutrition = await nutritionService.generateDailyNutrition(userData) || {
+        meals: {
+          breakfast: { calories: 400, protein: 30, carbs: 45, fat: 10 },
+          lunch: { calories: 500, protein: 40, carbs: 50, fat: 15 },
+          dinner: { calories: 600, protein: 45, carbs: 60, fat: 20 },
+          snacks: { calories: 300, protein: 15, carbs: 40, fat: 10 }
+        },
+        hydration: { target: Math.round(userSettings.profile.weight / 2) },
+        totalCalories: 1800,
+        macros: { protein: 130, carbs: 195, fat: 55 }
       };
-      setDailyWorkout(workoutPlan);
+      setDailyNutrition(nutrition);
 
-      setLastAiUpdate(new Date());
+      // The workout will be generated by the WorkoutGenerator component
+      setLastAiUpdate(new Date().toISOString());
 
     } catch (err) {
       console.error('Error generating AI recommendations:', err);
-      setError(`AI recommendations failed: ${err.message}`);
-      await generateFallbackRecommendations();
+      setError('Failed to generate recommendations');
     } finally {
       setGeneratingNutrition(false);
-    }
-  }, [trainingData, athlete, activities, trainingGoal, dietaryRestrictions, seasonType, upcomingEvents, foodPreferences, dailyFoodLog, generateFallbackRecommendations]);
-
-  // Manual nutrition generation
-  const generateDailyNutrition = async () => {
-    setGeneratingNutrition(true);
-    try {
-      const userData = {
-        athlete,
-        trainingData,
-        activities,
-        preferences: { trainingGoal, dietaryRestrictions, seasonType },
-        upcomingEvents,
-        foodPreferences,
-        dailyFoodLog
-      };
-
-      const nutrition = await nutritionService.generateMockDailyNutrition(userData);
-      setDailyNutrition(nutrition);
-
-    } catch (err) {
-      console.error('Error generating daily nutrition:', err);
-      await generateFallbackRecommendations();
-    } finally {
-      setGeneratingNutrition(false);
-    }
-  };
-
-  // Generate workout recommendations
-  const generateDailyWorkout = async () => {
-    setGeneratingWorkout(true);
-    try {
-      const userData = {
-        athlete,
-        trainingData,
-        activities,
-        preferences: { trainingGoal, dietaryRestrictions, seasonType },
-        upcomingEvents,
-        foodPreferences,
-        dailyFoodLog
-      };
-
-      const workout = await nutritionService.generateMockWorkout?.(userData) || {
-        type: 'Easy Run',
-        duration: '45 minutes',
-        intensity: 'Zone 2',
-        focus: 'Aerobic base building'
-      };
-      setDailyWorkout(workout);
-
-    } catch (err) {
-      console.error('Error generating workout:', err);
-      setDailyWorkout({
-        type: 'Recovery',
-        duration: '30 minutes',
-        intensity: 'Easy',
-        focus: 'Active recovery'
-      });
-    } finally {
       setGeneratingWorkout(false);
     }
   };
@@ -334,10 +260,6 @@ const App = () => {
     setUpcomingEvents(upcomingEvents.filter(e => e.id !== eventId));
   };
 
-  const clearAllEvents = () => {
-    setUpcomingEvents([]);
-  };
-
   // Handle Strava connection
   const handleStravaConnect = () => {
     const authUrl = stravaService.getAuthUrl();
@@ -352,26 +274,13 @@ const App = () => {
     }
   };
 
-  // Handle export
-  const handleExportData = () => {
-    const exportData = {
-      athlete,
-      activities,
-      trainingData,
-      nutritionPlan,
-      upcomingEvents,
-      foodPreferences,
-      dailyFoodLog,
-      exportDate: new Date().toISOString()
-    };
-    
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `trainfuel-data-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  // Handle settings save
+  const handleSettingsSave = (newSettings) => {
+    setUserSettings(newSettings);
+    // Trigger re-generation if AI is enabled
+    if (aiRecommendationsEnabled) {
+      generateAIRecommendations();
+    }
   };
 
   // Toggle AI recommendations
@@ -382,210 +291,183 @@ const App = () => {
     }
   };
 
-  // Update functions for child components
-  const updateFoodPreferences = (newPreferences) => {
-    setFoodPreferences(newPreferences);
-  };
-
-  const updateDailyFoodLog = (newLog) => {
-    setDailyFoodLog(newLog);
-  };
-
-  const regenerateWithFoodData = async (currentFoodData) => {
-    console.log('Regenerating with food data:', currentFoodData);
-    await generateAIRecommendations();
-  };
-
-  const handleTrainingGoalChange = (goal) => {
-    setTrainingGoal(goal);
-  };
-
-  const handleDietaryRestrictionsChange = (restrictions) => {
-    setDietaryRestrictions(restrictions);
-  };
-
-  const handleAIToggle = () => {
-    toggleAIRecommendations();
-  };
-
-  const handleDisconnectStrava = () => {
-    stravaService.logout();
-    setIsAuthenticated(false);
-    setAthlete(null);
-    setActivities([]);
-    setTrainingData(null);
-  };
-
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gray-50">
-        <header className="bg-white shadow-sm border-b border-gray-200">
+        {/* Header */}
+        <header className="bg-white shadow-sm border-b">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center py-4">
+            <div className="flex justify-between items-center h-16">
               <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                  <Activity className="h-8 w-8 text-blue-600" />
-                  <h1 className="text-2xl font-bold text-gray-900">TrainFuel</h1>
-                  {aiRecommendationsEnabled && (
-                    <div className="flex items-center space-x-1 bg-blue-100 px-2 py-1 rounded-full">
-                      <Brain className="h-4 w-4 text-blue-600" />
-                      <span className="text-xs text-blue-600 font-medium">AI Powered</span>
-                    </div>
-                  )}
-                </div>
-
-                {isAuthenticated && athlete && (
-                  <div className="text-sm text-gray-600">
-                    Welcome back, {athlete.firstname}!
-                    {lastAiUpdate && (
-                      <div className="text-xs text-blue-600">
-                        AI updated: {lastAiUpdate.toLocaleTimeString()}
-                      </div>
-                    )}
-                  </div>
+                <h1 className="text-2xl font-bold text-gray-900">TrainFuel</h1>
+                {athlete && (
+                  <span className="text-sm text-gray-600">
+                    Welcome, {athlete.firstname}!
+                  </span>
                 )}
               </div>
 
-              <div className="flex items-center space-x-3">
-                {error && (
-                  <div className="flex items-center space-x-2 text-red-600 bg-red-50 px-3 py-1 rounded-lg">
-                    <AlertCircle className="h-4 w-4" />
-                    <span className="text-sm">{error.substring(0, 50)}...</span>
-                  </div>
-                )}
+              <div className="flex items-center space-x-4">
+                {/* AI Toggle */}
+                <button
+                  onClick={toggleAIRecommendations}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors ${
+                    aiRecommendationsEnabled 
+                      ? 'bg-green-100 text-green-700' 
+                      : 'bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  <Brain className="w-4 h-4" />
+                  <span className="text-sm">AI {aiRecommendationsEnabled ? 'ON' : 'OFF'}</span>
+                </button>
 
+                {/* Refresh Button */}
                 {isAuthenticated && (
-                  <>
-                    <button
-                      onClick={handleRefresh}
-                      disabled={loading || generatingNutrition}
-                      className="flex items-center space-x-2 bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50"
-                    >
-                      <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                      <span className="text-sm">{loading ? 'Syncing...' : 'Sync'}</span>
-                    </button>
-
-                    <button
-                      onClick={handleExportData}
-                      className="flex items-center space-x-2 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
-                    >
-                      <Download className="h-4 w-4" />
-                      <span className="text-sm">Export</span>
-                    </button>
-
-                    <button
-                      onClick={toggleAIRecommendations}
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                        aiRecommendationsEnabled 
-                          ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
-                    >
-                      <Zap className="h-4 w-4" />
-                      <span className="text-sm">
-                        {aiRecommendationsEnabled ? 'AI On' : 'AI Off'}
-                      </span>
-                    </button>
-                  </>
+                  <button
+                    onClick={handleRefresh}
+                    disabled={loading}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                  </button>
                 )}
               </div>
             </div>
-
-            {isAuthenticated && (
-              <nav className="flex space-x-8 py-2">
-                {['dashboard', 'calendar', 'settings'].map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`capitalize text-sm font-medium pb-2 border-b-2 transition-colors ${
-                      activeTab === tab
-                        ? 'text-blue-600 border-blue-600'
-                        : 'text-gray-500 border-transparent hover:text-gray-700'
-                    }`}
-                  >
-                    {tab === 'dashboard' && <Activity className="inline h-4 w-4 mr-1" />}
-                    {tab === 'calendar' && <Calendar className="inline h-4 w-4 mr-1" />}
-                    {tab === 'settings' && <Settings className="inline h-4 w-4 mr-1" />}
-                    {tab}
-                  </button>
-                ))}
-              </nav>
-            )}
           </div>
         </header>
 
+        {/* Navigation Tabs */}
+        {isAuthenticated && (
+          <div className="bg-white border-b">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <nav className="flex space-x-8">
+                <button
+                  onClick={() => setActiveTab('dashboard')}
+                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                    activeTab === 'dashboard'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Home className="w-4 h-4 inline mr-2" />
+                  Dashboard
+                </button>
+                <button
+                  onClick={() => setActiveTab('workout')}
+                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                    activeTab === 'workout'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Activity className="w-4 h-4 inline mr-2" />
+                  Today's Workout
+                </button>
+                <button
+                  onClick={() => setActiveTab('nutrition')}
+                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                    activeTab === 'nutrition'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Utensils className="w-4 h-4 inline mr-2" />
+                  Nutrition
+                </button>
+                <button
+                  onClick={() => setActiveTab('calendar')}
+                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                    activeTab === 'calendar'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Calendar className="w-4 h-4 inline mr-2" />
+                  Calendar
+                </button>
+                <button
+                  onClick={() => setActiveTab('settings')}
+                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                    activeTab === 'settings'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Settings className="w-4 h-4 inline mr-2" />
+                  Settings
+                </button>
+              </nav>
+            </div>
+          </div>
+        )}
+
+        {/* Main Content */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {error && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-red-600" />
+              <span className="text-red-700">{error}</span>
+            </div>
+          )}
+
           {!isAuthenticated ? (
-            <StravaAuth 
-              onConnect={handleStravaConnect}
-              loading={loading}
-              error={error}
-            />
+            <StravaAuth onConnect={handleStravaConnect} />
           ) : (
             <>
               {activeTab === 'dashboard' && (
                 <DashboardView
-                  isAuthenticated={isAuthenticated}
-                  loading={loading}
+                  athlete={athlete}
+                  activities={activities}
                   trainingData={trainingData}
-                  nutritionPlan={nutritionPlan}
-                  dailyNutrition={dailyNutrition}
-                  dailyWorkout={dailyWorkout}
-                  generatingNutrition={generatingNutrition}
-                  generatingWorkout={generatingWorkout}
-                  handleGenerateNutrition={generateDailyNutrition}
-                  handleGenerateWorkout={generateDailyWorkout}
+                  nutritionPlan={dailyNutrition}
                   upcomingEvents={upcomingEvents}
-                  setShowAddEventModal={setShowAddEventModal}
-                  aiRecommendationsEnabled={aiRecommendationsEnabled}
-                  lastAiUpdate={lastAiUpdate}
-                  foodPreferences={foodPreferences}
-                  onUpdateFoodPreferences={updateFoodPreferences}
-                  dailyFoodLog={dailyFoodLog}
-                  onUpdateDailyFoodLog={updateDailyFoodLog}
-                  onRegenerateWithFoodData={regenerateWithFoodData}
+                  loading={loading}
+                />
+              )}
+
+              {activeTab === 'workout' && (
+                <WorkoutGenerator
+                  stravaData={trainingData}
+                  upcomingEvents={upcomingEvents}
+                  isInSeason={userSettings.goals.currentPhase === 'in_season'}
+                />
+              )}
+
+              {activeTab === 'nutrition' && (
+                <MealSuggestions
+                  trainingData={trainingData}
+                  foodLog={dailyFoodLog}
+                  userPreferences={userSettings.foodPreferences}
+                  currentWeight={userSettings.profile.weight}
                 />
               )}
 
               {activeTab === 'calendar' && (
                 <CalendarView
-                  isAuthenticated={isAuthenticated}
                   activities={activities}
+                  upcomingEvents={upcomingEvents}
+                  onAddEvent={() => setShowAddEventModal(true)}
+                  onDeleteEvent={deleteEvent}
                 />
               )}
 
               {activeTab === 'settings' && (
-                <SettingsView
-                  isAuthenticated={isAuthenticated}
-                  athlete={athlete}
-                  trainingGoal={trainingGoal}
-                  onTrainingGoalChange={handleTrainingGoalChange}
-                  dietaryRestrictions={dietaryRestrictions}
-                  onDietaryRestrictionsChange={handleDietaryRestrictionsChange}
-                  seasonType={seasonType}
-                  onSeasonTypeChange={setSeasonType}
-                  lastSync={lastSync}
-                  upcomingEvents={upcomingEvents}
-                  onClearAllEvents={clearAllEvents}
-                  onRefresh={handleRefresh}
-                  aiRecommendationsEnabled={aiRecommendationsEnabled}
-                  onAIToggle={handleAIToggle}
-                  onDisconnect={handleDisconnectStrava}
-                  foodPreferences={foodPreferences}
-                  onUpdateFoodPreferences={updateFoodPreferences}
-                  dailyFoodLog={dailyFoodLog}
-                />
+                <SettingsPage onSave={handleSettingsSave} />
               )}
             </>
           )}
-
-          <AddEventModal
-            show={showAddEventModal}
-            onClose={() => setShowAddEventModal(false)}
-            onAddEvent={addEvent}
-            minDate={new Date().toISOString().split('T')[0]}
-          />
         </main>
+
+        {/* Modals */}
+        {showAddEventModal && (
+          <AddEventModal
+            onClose={() => setShowAddEventModal(false)}
+            onSave={(event) => {
+              addEvent(event);
+              setShowAddEventModal(false);
+            }}
+          />
+        )}
       </div>
     </ErrorBoundary>
   );
