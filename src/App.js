@@ -136,11 +136,26 @@ const App = () => {
         }
       } else {
         // Check if already authenticated
-        if (stravaService.isAuthenticated()) {
+        const authenticated = stravaService.isAuthenticated();
+        console.log('Auth check on mount:', authenticated);
+        if (authenticated) {
           const savedAthlete = localStorage.getItem('strava_athlete');
           if (savedAthlete) {
-            setAthlete(JSON.parse(savedAthlete));
+            const athleteData = JSON.parse(savedAthlete);
+            console.log('Setting athlete data:', athleteData);
+            setAthlete(athleteData);
             setIsAuthenticated(true);
+          } else {
+            console.log('No saved athlete data, fetching...');
+            // Fetch athlete data if not saved
+            try {
+              const athleteData = await stravaService.getAthlete();
+              setAthlete(athleteData);
+              setIsAuthenticated(true);
+              localStorage.setItem('strava_athlete', JSON.stringify(athleteData));
+            } catch (err) {
+              console.error('Failed to fetch athlete:', err);
+            }
           }
         }
       }
