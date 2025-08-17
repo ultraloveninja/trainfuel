@@ -83,7 +83,7 @@ const DashboardView = ({ athlete, activities, trainingData, nutritionPlan, upcom
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-500 text-sm">Total Distance</p>
-              <p className="text-2xl font-bold">{(totalDistance / 1000).toFixed(1)} km</p>
+              <p className="text-2xl font-bold">{(totalDistance / 1609.34).toFixed(1)} mi</p>
             </div>
             <TrendingUp className="w-8 h-8 text-purple-500" />
           </div>
@@ -117,7 +117,7 @@ const DashboardView = ({ athlete, activities, trainingData, nutritionPlan, upcom
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="font-medium">{(activity.distance / 1000).toFixed(2)} km</p>
+                  <p className="font-medium">{(activity.distance / 1609.34).toFixed(2)} mi</p>
                   <p className="text-sm text-gray-500">
                     {Math.floor(activity.moving_time / 60)} min
                   </p>

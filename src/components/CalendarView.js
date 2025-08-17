@@ -223,7 +223,7 @@ const CalendarView = ({ activities, upcomingEvents, onAddEvent, onDeleteEvent })
                       <div>
                         <p className="font-medium">{activity.name}</p>
                         <p className="text-sm text-gray-600">
-                          {activity.type} • {(activity.distance / 1000).toFixed(2)} km • {Math.floor(activity.moving_time / 60)} min
+                          {activity.type} • {(activity.distance / 1609.34).toFixed(2)} mi • {Math.floor(activity.moving_time / 60)} min
                         </p>
                       </div>
                       <a
@@ -304,10 +304,10 @@ const CalendarView = ({ activities, upcomingEvents, onAddEvent, onDeleteEvent })
           </div>
           <div>
             <p className="text-2xl font-bold text-blue-600">
-              {activities?.filter(a => {
+              {(activities?.filter(a => {
                 const date = new Date(a.start_date);
                 return date.getMonth() === currentDate.getMonth() && date.getFullYear() === currentDate.getFullYear();
-              }).reduce((sum, a) => sum + (a.distance || 0), 0) / 1000 || 0}.toFixed(1)} km
+              }).reduce((sum, a) => sum + (a.distance || 0), 0) / 1609.34 || 0).toFixed(1)} mi
             </p>
             <p className="text-sm text-gray-500">Distance</p>
           </div>
