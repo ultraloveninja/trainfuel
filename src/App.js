@@ -8,7 +8,8 @@ import nutritionService from './services/nutritionService';
 
 // Import NEW components
 import WorkoutGenerator from './components/WorkoutGenerator';
-import MealSuggestions from './components/MealSuggestions';
+import NutritionTracker from './components/NutritionTracker';
+import EnhancedNutritionTracker from './components/EnhancedNutritionTracker';
 import SettingsPage from './components/SettingsPage';
 
 // Import existing components
@@ -79,11 +80,47 @@ const App = () => {
   const [generatingNutrition, setGeneratingNutrition] = useState(false);
   const [generatingWorkout, setGeneratingWorkout] = useState(false);
 
-  // Food logging
+  // Food logging with history
+  const [foodLogHistory, setFoodLogHistory] = useState(() => {
+    const saved = localStorage.getItem('trainfuel_food_log_history');
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const [dailyFoodLog, setDailyFoodLog] = useState(() => {
     const saved = localStorage.getItem('trainfuel_daily_food_log');
     return saved ? JSON.parse(saved) : [];
   });
+
+  // Handle food log updates
+  const handleFoodLogUpdate = (todayLog) => {
+    // Save today's log
+    setDailyFoodLog(todayLog);
+    
+    // Update history (keep last 30 days)
+    const updatedHistory = [...foodLogHistory];
+    const todayIndex = updatedHistory.findIndex(log => log.date === todayLog.date);
+    
+    if (todayIndex >= 0) {
+      updatedHistory[todayIndex] = todayLog;
+    } else {
+      updatedHistory.push(todayLog);
+    }
+    
+    // Keep only last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const filteredHistory = updatedHistory.filter(log => 
+      new Date(log.date) > thirtyDaysAgo
+    );
+    
+    setFoodLogHistory(filteredHistory);
+    localStorage.setItem('trainfuel_food_log_history', JSON.stringify(filteredHistory));
+    
+    // Regenerate AI recommendations with new food data
+    if (aiRecommendationsEnabled) {
+      generateAIRecommendations();
+    }
+  };
 
   // UI state
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -232,7 +269,8 @@ const App = () => {
         goals: userSettings.goals,
         preferences: userSettings.foodPreferences,
         dietaryRestrictions: userSettings.foodPreferences.restrictions,
-        recentFoodLog: dailyFoodLog.slice(-7) // Last 7 days
+        recentFoodLog: foodLogHistory.slice(-7), // Last 7 days of food logs
+        todaysFoodLog: dailyFoodLog // Today's current food intake
       };
 
       // Generate nutrition plan
@@ -449,11 +487,12 @@ const App = () => {
               )}
 
               {activeTab === 'nutrition' && (
-                <MealSuggestions
+                <NutritionTracker
                   trainingData={trainingData}
-                  foodLog={dailyFoodLog}
+                  foodLog={foodLogHistory}
                   userPreferences={userSettings.foodPreferences}
                   currentWeight={userSettings.profile.weight}
+                  onFoodLogUpdate={handleFoodLogUpdate}
                 />
               )}
 
