@@ -44,9 +44,14 @@ const NICK_CHASE_METHODS = {
 
 const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
   const [todaysWorkout, setTodaysWorkout] = useState(null);
+  const [tomorrowsWorkout, setTomorrowsWorkout] = useState(null);
   const [workoutSuggestions, setWorkoutSuggestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fatiguLevel, setFatiguLevel] = useState('moderate');
+  const [selectedDay, setSelectedDay] = useState('today'); // Toggle between today and tomorrow
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiWorkouts, setAiWorkouts] = useState(null);
+  const [lastAiGeneration, setLastAiGeneration] = useState(null);
 
   useEffect(() => {
     generateWorkout();
@@ -78,25 +83,57 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
       // Get appropriate training plan
       const trainingPlan = isInSeason ? NICK_CHASE_METHODS.inSeason : NICK_CHASE_METHODS.offSeason;
       
-      // Determine today's workout based on day of week
+      // Get today's date and tomorrow's date
       const today = new Date();
-      const dayName = today.toLocaleDateString('en-US', { weekday: 'long' });
-      const scheduledWorkout = trainingPlan.weeklyStructure.find(w => w.day === dayName);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
       
-      // Adjust based on fatigue
-      let workout = { ...scheduledWorkout };
-      if (fatigue === 'high' && workout.type !== 'easy') {
-        workout = {
-          ...workout,
+      // Get day names
+      const todayName = today.toLocaleDateString('en-US', { weekday: 'long' });
+      const tomorrowName = tomorrow.toLocaleDateString('en-US', { weekday: 'long' });
+      
+      // Find scheduled workouts
+      const todayScheduled = trainingPlan.weeklyStructure.find(w => w.day === todayName);
+      const tomorrowScheduled = trainingPlan.weeklyStructure.find(w => w.day === tomorrowName);
+      
+      // Adjust today's workout based on fatigue
+      let todayWorkout = { ...todayScheduled };
+      if (fatigue === 'high' && todayWorkout.type !== 'easy') {
+        todayWorkout = {
+          ...todayWorkout,
           type: 'easy',
           modified: true,
-          originalType: workout.type,
+          originalType: todayWorkout.type,
           reason: 'High fatigue detected - recovery recommended'
+        };
+      }
+      
+      // Adjust tomorrow's workout based on today's workout and projected fatigue
+      let tomorrowWorkout = { ...tomorrowScheduled };
+      let projectedFatigue = fatigue;
+      
+      // If doing hard workout today, tomorrow might need to be easier
+      if (todayWorkout.type === 'intervals' || todayWorkout.type === 'tempo') {
+        projectedFatigue = fatigue === 'fresh' ? 'moderate' : 'high';
+      }
+      // If resting today, tomorrow can be harder
+      else if (todayWorkout.type === 'easy') {
+        projectedFatigue = fatigue === 'high' ? 'moderate' : 'fresh';
+      }
+      
+      if (projectedFatigue === 'high' && tomorrowWorkout.type !== 'easy') {
+        tomorrowWorkout = {
+          ...tomorrowWorkout,
+          type: 'easy',
+          modified: true,
+          originalType: tomorrowWorkout.type,
+          reason: 'Projected fatigue after today\'s workout - consider recovery'
         };
       }
 
       // Add specific details from training methods
-      const workoutDetails = trainingPlan.workoutTypes[workout.type];
+      const todayDetails = trainingPlan.workoutTypes[todayWorkout.type];
+      const tomorrowDetails = trainingPlan.workoutTypes[tomorrowWorkout.type];
       
       // Check for upcoming events and adjust
       let eventAdjustment = null;
@@ -108,19 +145,30 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
           eventAdjustment = {
             taper: true,
             message: `Tapering for ${nextEvent.name} in ${daysUntilEvent} days`,
-            adjustedDuration: workoutDetails.duration.split('-')[0] + ' min'
+            adjustedDuration: todayDetails.duration.split('-')[0] + ' min'
           };
         }
       }
 
-      // Generate AI-powered suggestions using Claude
-      const suggestions = await generateAISuggestions(workout, fatigue, stravaData);
+      // Generate AI-powered suggestions
+      const suggestions = await generateAISuggestions(todayWorkout, fatigue, stravaData);
 
       setTodaysWorkout({
-        ...workout,
-        ...workoutDetails,
+        ...todayWorkout,
+        ...todayDetails,
         fatiguLevel: fatigue,
         eventAdjustment,
+        dayName: todayName,
+        date: today.toLocaleDateString(),
+        timestamp: new Date().toISOString()
+      });
+      
+      setTomorrowsWorkout({
+        ...tomorrowWorkout,
+        ...tomorrowDetails,
+        projectedFatigue,
+        dayName: tomorrowName,
+        date: tomorrow.toLocaleDateString(),
         timestamp: new Date().toISOString()
       });
 
@@ -137,6 +185,14 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
         focus: 'Recovery',
         error: true
       });
+      setTomorrowsWorkout({
+        type: 'easy',
+        discipline: 'bike',
+        duration: '45-60 min',
+        effort: 'Zone 2',
+        focus: 'Active Recovery',
+        error: true
+      });
     } finally {
       setLoading(false);
     }
@@ -147,8 +203,14 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
     // The API should only be called when user explicitly requests it
     console.log('Using cached workout suggestions to avoid rate limiting');
     return getFallbackSuggestions(workout, fatigue, stravaData);
+  // Keep the existing suggestion function for backward compatibility
+  const generateAISuggestions = async (workout, fatigue, stravaData) => {
+    // Return fallback suggestions immediately
+    console.log('Using cached workout suggestions to avoid rate limiting');
+    return getFallbackSuggestions(workout, fatigue, stravaData);
   };
-  
+
+  // Keep the existing fallback functions
   const getFallbackSuggestions = (workout, fatigue, stravaData) => {
     // Dynamic fallback suggestions based on current state
     const isHighFatigue = fatigue === 'high';
@@ -237,27 +299,67 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
 
   return (
     <div className="space-y-6">
-      {/* Today's Workout Card */}
+      {/* Day Toggle Buttons */}
+      <div className="bg-white rounded-lg shadow-md p-4">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setSelectedDay('today')}
+            className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+              selectedDay === 'today' 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Today's Workout
+          </button>
+          <button
+            onClick={() => setSelectedDay('tomorrow')}
+            className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+              selectedDay === 'tomorrow' 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Tomorrow's Workout
+          </button>
+        </div>
+      </div>
+
+      {/* Workout Card - Shows selected day */}
       <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-2xl font-bold flex items-center gap-2">
             <Calendar className="w-6 h-6" />
-            Today's Workout
+            {selectedDay === 'today' ? "Today's" : "Tomorrow's"} Workout
           </h2>
-          <span className="bg-white/20 px-3 py-1 rounded-full text-sm">
-            {isInSeason ? 'In Season' : 'Off Season'}
-          </span>
+          <div className="flex flex-col items-end gap-1">
+            <span className="bg-white/20 px-3 py-1 rounded-full text-sm">
+              {isInSeason ? 'In Season' : 'Off Season'}
+            </span>
+            {selectedDay === 'today' ? (
+              <span className="text-xs text-white/80">{todaysWorkout?.date}</span>
+            ) : (
+              <span className="text-xs text-white/80">{tomorrowsWorkout?.date}</span>
+            )}
+          </div>
         </div>
 
-        {todaysWorkout && (
+        {(selectedDay === 'today' ? todaysWorkout : tomorrowsWorkout) && (
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <Activity className="w-8 h-8" />
               <div>
                 <h3 className="text-xl font-semibold capitalize">
-                  {todaysWorkout.type} {todaysWorkout.discipline}
+                  {selectedDay === 'today' 
+                    ? `${todaysWorkout.type} ${todaysWorkout.discipline}` 
+                    : `${tomorrowsWorkout.type} ${tomorrowsWorkout.discipline}`}
                 </h3>
-                <p className="text-white/80">{todaysWorkout.focus}</p>
+                <p className="text-white/80">
+                  {selectedDay === 'today' ? todaysWorkout.focus : tomorrowsWorkout.focus}
+                </p>
+                <p className="text-xs text-white/60 mt-1">
+                  {selectedDay === 'today' ? todaysWorkout.dayName : tomorrowsWorkout.dayName}
+                </p>
               </div>
             </div>
 
@@ -268,7 +370,9 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
                   <span className="text-sm">Duration</span>
                 </div>
                 <p className="font-semibold">
-                  {todaysWorkout.eventAdjustment?.adjustedDuration || todaysWorkout.duration}
+                  {selectedDay === 'today' 
+                    ? (todaysWorkout.eventAdjustment?.adjustedDuration || todaysWorkout.duration)
+                    : tomorrowsWorkout.duration}
                 </p>
               </div>
               <div className="bg-white/10 rounded-lg p-3">
@@ -276,11 +380,14 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
                   <TrendingUp className="w-4 h-4" />
                   <span className="text-sm">Effort</span>
                 </div>
-                <p className="font-semibold">{todaysWorkout.effort}</p>
+                <p className="font-semibold">
+                  {selectedDay === 'today' ? todaysWorkout.effort : tomorrowsWorkout.effort}
+                </p>
               </div>
             </div>
 
-            {todaysWorkout.modified && (
+            {/* Show modifications for selected day */}
+            {selectedDay === 'today' && todaysWorkout.modified && (
               <div className="bg-yellow-500/20 border border-yellow-400/50 rounded-lg p-3">
                 <div className="flex items-start gap-2">
                   <AlertCircle className="w-5 h-5 mt-0.5" />
@@ -294,48 +401,302 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
                 </div>
               </div>
             )}
+            
+            {selectedDay === 'tomorrow' && tomorrowsWorkout.modified && (
+              <div className="bg-yellow-500/20 border border-yellow-400/50 rounded-lg p-3">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-5 h-5 mt-0.5" />
+                  <div>
+                    <p className="font-semibold">Suggested Modification</p>
+                    <p className="text-sm">{tomorrowsWorkout.reason}</p>
+                    <p className="text-sm mt-1">
+                      Scheduled: {tomorrowsWorkout.originalType} {tomorrowsWorkout.discipline}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
-            {todaysWorkout.eventAdjustment && (
+            {selectedDay === 'today' && todaysWorkout.eventAdjustment && (
               <div className="bg-green-500/20 border border-green-400/50 rounded-lg p-3">
                 <p className="text-sm">{todaysWorkout.eventAdjustment.message}</p>
               </div>
             )}
 
             <div className="mt-4 pt-4 border-t border-white/20">
-              <p className="text-sm text-white/80">
-                <strong>Fatigue Level:</strong> {fatiguLevel}
-              </p>
-              <p className="text-sm text-white/80 mt-1">
-                <strong>Training Philosophy:</strong> {
-                  isInSeason ? NICK_CHASE_METHODS.inSeason.philosophy : NICK_CHASE_METHODS.offSeason.philosophy
-                }
-              </p>
+              {selectedDay === 'today' ? (
+                <>
+                  <p className="text-sm text-white/80">
+                    <strong>Current Fatigue Level:</strong> {fatiguLevel}
+                  </p>
+                  <p className="text-sm text-white/80 mt-1">
+                    <strong>Training Philosophy:</strong> {
+                      isInSeason ? NICK_CHASE_METHODS.inSeason.philosophy : NICK_CHASE_METHODS.offSeason.philosophy
+                    }
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-white/80">
+                    <strong>Projected Fatigue:</strong> {tomorrowsWorkout.projectedFatigue}
+                  </p>
+                  <p className="text-sm text-white/80 mt-1">
+                    <strong>Preparation Tip:</strong> {
+                      tomorrowsWorkout.type === 'intervals' || tomorrowsWorkout.type === 'tempo'
+                        ? 'Get good sleep tonight and hydrate well. This will be a key session.'
+                        : tomorrowsWorkout.type === 'long'
+                        ? 'Prepare nutrition for a longer session. Consider pre-hydrating.'
+                        : 'Focus on recovery today to be fresh for tomorrow.'
+                    }
+                  </p>
+                </>
+              )}
             </div>
           </div>
         )}
       </div>
 
-      {/* Workout Suggestions */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold mb-4">Alternative Workouts</h3>
-        <div className="grid gap-4">
-          {workoutSuggestions.map((suggestion, index) => (
-            <div key={index} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
-              <h4 className="font-semibold text-blue-600">{suggestion.title}</h4>
-              <p className="text-sm text-gray-600 mt-1">{suggestion.description}</p>
-              <div className="flex gap-4 mt-2">
-                <span className="text-sm bg-gray-100 px-2 py-1 rounded">
-                  <Clock className="w-3 h-3 inline mr-1" />
-                  {suggestion.duration}
-                </span>
-                <span className="text-sm bg-blue-50 px-2 py-1 rounded text-blue-700">
-                  {suggestion.nutrition}
-                </span>
+      {/* AI-Powered Workout Section */}
+      <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg shadow-md p-6 border border-purple-200">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Brain className="w-5 h-5 text-purple-600" />
+              AI-Powered Personal Training
+            </h3>
+            {lastAiGeneration && (
+              <p className="text-xs text-gray-600 mt-1">
+                Last generated: {new Date(lastAiGeneration).toLocaleString()}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={generateAIWorkouts}
+            disabled={aiLoading}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+              aiLoading 
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                : 'bg-purple-600 text-white hover:bg-purple-700'
+            }`}
+          >
+            {aiLoading ? (
+              <>
+                <Loader className="w-4 h-4 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Zap className="w-4 h-4" />
+                Generate AI Workouts
+              </>
+            )}
+          </button>
+        </div>
+
+        {aiWorkouts ? (
+          <div className="space-y-4">
+            {/* Today's AI Workout */}
+            {selectedDay === 'today' && aiWorkouts.todayPrimary && (
+              <div className="bg-white rounded-lg p-4">
+                <h4 className="font-semibold text-purple-700 mb-3">
+                  AI Recommended: {aiWorkouts.todayPrimary.title}
+                </h4>
+                <div className="space-y-3">
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700">Purpose:</span>
+                    <p className="text-gray-600">{aiWorkouts.todayPrimary.purpose}</p>
+                  </div>
+                  
+                  <div className="bg-gray-50 rounded p-3 space-y-2">
+                    <div className="text-sm">
+                      <span className="font-medium">🔥 Warm-up:</span>
+                      <p className="text-gray-600">{aiWorkouts.todayPrimary.warmup}</p>
+                    </div>
+                    <div className="text-sm">
+                      <span className="font-medium">💪 Main Set:</span>
+                      <p className="text-gray-600">{aiWorkouts.todayPrimary.mainSet}</p>
+                    </div>
+                    <div className="text-sm">
+                      <span className="font-medium">🧊 Cool-down:</span>
+                      <p className="text-gray-600">{aiWorkouts.todayPrimary.cooldown}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="font-medium text-gray-700">Duration:</span>
+                      <p className="text-gray-600">{aiWorkouts.todayPrimary.duration}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">Intensity:</span>
+                      <p className="text-gray-600">{aiWorkouts.todayPrimary.intensity}</p>
+                    </div>
+                  </div>
+
+                  <div className="text-sm border-t pt-3">
+                    <span className="font-medium text-gray-700">🥤 Nutrition:</span>
+                    <p className="text-gray-600">{aiWorkouts.todayPrimary.nutrition}</p>
+                  </div>
+
+                  <div className="text-sm bg-purple-50 rounded p-2">
+                    <span className="font-medium text-purple-700">🧠 Mental Focus:</span>
+                    <p className="text-purple-600">{aiWorkouts.todayPrimary.mentalFocus}</p>
+                  </div>
+                </div>
+
+                {/* Alternative AI Workouts */}
+                {aiWorkouts.todayAlternatives && aiWorkouts.todayAlternatives.length > 0 && (
+                  <div className="mt-4 pt-4 border-t">
+                    <p className="text-sm font-medium text-gray-700 mb-2">Alternative Options:</p>
+                    <div className="space-y-2">
+                      {aiWorkouts.todayAlternatives.map((alt, idx) => (
+                        <div key={idx} className="text-sm bg-gray-50 rounded p-2">
+                          <p className="font-medium">{alt.title}</p>
+                          <p className="text-xs text-gray-600">{alt.duration} • {alt.intensity}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            )}
+
+            {/* Tomorrow's AI Workout */}
+            {selectedDay === 'tomorrow' && aiWorkouts.tomorrowPrimary && (
+              <div className="bg-white rounded-lg p-4">
+                <h4 className="font-semibold text-purple-700 mb-3">
+                  AI Recommended: {aiWorkouts.tomorrowPrimary.title}
+                </h4>
+                <div className="space-y-3">
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700">Purpose:</span>
+                    <p className="text-gray-600">{aiWorkouts.tomorrowPrimary.purpose}</p>
+                  </div>
+                  
+                  <div className="bg-gray-50 rounded p-3 space-y-2">
+                    <div className="text-sm">
+                      <span className="font-medium">🔥 Warm-up:</span>
+                      <p className="text-gray-600">{aiWorkouts.tomorrowPrimary.warmup}</p>
+                    </div>
+                    <div className="text-sm">
+                      <span className="font-medium">💪 Main Set:</span>
+                      <p className="text-gray-600">{aiWorkouts.tomorrowPrimary.mainSet}</p>
+                    </div>
+                    <div className="text-sm">
+                      <span className="font-medium">🧊 Cool-down:</span>
+                      <p className="text-gray-600">{aiWorkouts.tomorrowPrimary.cooldown}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="font-medium text-gray-700">Duration:</span>
+                      <p className="text-gray-600">{aiWorkouts.tomorrowPrimary.duration}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">Intensity:</span>
+                      <p className="text-gray-600">{aiWorkouts.tomorrowPrimary.intensity}</p>
+                    </div>
+                  </div>
+
+                  <div className="text-sm border-t pt-3">
+                    <span className="font-medium text-gray-700">🥤 Nutrition:</span>
+                    <p className="text-gray-600">{aiWorkouts.tomorrowPrimary.nutrition}</p>
+                  </div>
+
+                  <div className="text-sm bg-purple-50 rounded p-2">
+                    <span className="font-medium text-purple-700">🧠 Mental Focus:</span>
+                    <p className="text-purple-600">{aiWorkouts.tomorrowPrimary.mentalFocus}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Weekly Tips from AI */}
+            {aiWorkouts.weekTips && (
+              <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+                <h4 className="font-semibold text-yellow-900 mb-2">This Week's AI Insights</h4>
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <span className="font-medium text-yellow-800">Key Focus:</span>
+                    <p className="text-yellow-700">{aiWorkouts.weekTips.keyFocus}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-yellow-800">Recovery Priority:</span>
+                    <p className="text-yellow-700">{aiWorkouts.weekTips.recoveryDays?.join(', ')}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-yellow-800">Nutrition:</span>
+                    <p className="text-yellow-700">{aiWorkouts.weekTips.nutritionFocus}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-yellow-800">Mental Prep:</span>
+                    <p className="text-yellow-700">{aiWorkouts.weekTips.mentalPrep}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            <Brain className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+            <p className="text-sm">Click "Generate AI Workouts" to get personalized training recommendations</p>
+            <p className="text-xs text-gray-400 mt-1">Based on your Strava data, fatigue, and goals</p>
+          </div>
+        )}
+      </div>
+
+      {/* Quick Week Overview */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h3 className="text-lg font-semibold mb-4">Week at a Glance</h3>
+        <div className="grid grid-cols-7 gap-2">
+          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => {
+            const plan = isInSeason ? NICK_CHASE_METHODS.inSeason : NICK_CHASE_METHODS.offSeason;
+            const dayWorkout = plan.weeklyStructure[index];
+            const isToday = new Date().getDay() === (index + 1) % 7;
+            const isTomorrow = new Date().getDay() === index;
+            
+            return (
+              <div 
+                key={day} 
+                className={`text-center p-2 rounded-lg ${
+                  isToday ? 'bg-blue-100 border-2 border-blue-500' : 
+                  isTomorrow ? 'bg-purple-100 border-2 border-purple-500' :
+                  'bg-gray-50'
+                }`}
+              >
+                <p className="text-xs font-semibold">{day}</p>
+                <p className="text-xs mt-1 capitalize">{dayWorkout.type}</p>
+                <p className="text-xs text-gray-500">{dayWorkout.discipline}</p>
+              </div>
+            );
+          })}
         </div>
       </div>
+
+      {/* Workout Suggestions - only show for today */}
+      {selectedDay === 'today' && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold mb-4">Alternative Workouts for Today</h3>
+          <div className="grid gap-4">
+            {workoutSuggestions.map((suggestion, index) => (
+              <div key={index} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                <h4 className="font-semibold text-blue-600">{suggestion.title}</h4>
+                <p className="text-sm text-gray-600 mt-1">{suggestion.description}</p>
+                <div className="flex gap-4 mt-2">
+                  <span className="text-sm bg-gray-100 px-2 py-1 rounded">
+                    <Clock className="w-3 h-3 inline mr-1" />
+                    {suggestion.duration}
+                  </span>
+                  <span className="text-sm bg-blue-50 px-2 py-1 rounded text-blue-700">
+                    {suggestion.nutrition}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
