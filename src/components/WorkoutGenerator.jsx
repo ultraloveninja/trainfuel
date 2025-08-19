@@ -143,71 +143,82 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
   };
 
   const generateAISuggestions = async (workout, fatigue, stravaData) => {
-    try {
-      const proxyUrl = process.env.REACT_APP_PROXY_URL || 'http://localhost:3001/api/claude';
-      const response = await fetch(proxyUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+    // Return fallback suggestions immediately instead of calling API
+    // The API should only be called when user explicitly requests it
+    console.log('Using cached workout suggestions to avoid rate limiting');
+    return getFallbackSuggestions(workout, fatigue, stravaData);
+  };
+  
+  const getFallbackSuggestions = (workout, fatigue, stravaData) => {
+    // Dynamic fallback suggestions based on current state
+    const isHighFatigue = fatigue === 'high';
+    const isInSeasonMode = isInSeason;
+    
+    if (isHighFatigue) {
+      return [
+        {
+          title: "Recovery Swim",
+          description: "Easy swim focusing on form and breathing technique",
+          duration: "30-45 min",
+          nutrition: "Water only, protein shake post-workout"
         },
-        body: JSON.stringify({
-          prompt: `Based on Nick Chase's training methods and the following data, provide 3 specific workout suggestions:
-              
-              Current workout: ${workout.type} ${workout.discipline}
-              Fatigue level: ${fatigue}
-              Season: ${isInSeason ? 'In-season' : 'Off-season'}
-              Recent activities: ${stravaData?.activities?.length || 0} in last 7 days
-              
-              Follow Nick's principles:
-              - Liquid nutrition during long sessions
-              - Focus on consistency over intensity
-              - Sports psychology foundation
-              - Gradual adaptation
-              
-              Respond with a JSON array of 3 suggestions, each with:
-              {
-                "title": "short title",
-                "description": "detailed description",
-                "duration": "time range",
-                "nutrition": "fueling strategy"
-              }
-              
-              ONLY respond with valid JSON, no other text.`
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        let responseText = data.content || data.message || data.text;
-        if (typeof responseText === 'object' && responseText.text) {
-          responseText = responseText.text;
+        {
+          title: "Yoga/Stretching",
+          description: "Active recovery with focus on flexibility and mobility",
+          duration: "30-45 min",
+          nutrition: "Stay hydrated, light snack if needed"
+        },
+        {
+          title: "Easy Spin",
+          description: "Very light bike ride, keeping heart rate in Zone 1",
+          duration: "45-60 min",
+          nutrition: "Electrolytes only during, recovery meal after"
         }
-        responseText = responseText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-        return JSON.parse(responseText);
-      }
-    } catch (error) {
-      console.error('Error getting AI suggestions:', error);
+      ];
     }
-
-    // Fallback suggestions
+    
+    if (isInSeasonMode) {
+      return [
+        {
+          title: "Race Pace Intervals",
+          description: "Warm up, then 3x10min at race pace with 3min recovery",
+          duration: "60-75 min",
+          nutrition: "Sports drink during, 30-40g carbs per hour"
+        },
+        {
+          title: "Brick Workout",
+          description: "60min bike at moderate pace, immediate 20min run at race pace",
+          duration: "80 min total",
+          nutrition: "Liquid nutrition on bike, electrolytes on run"
+        },
+        {
+          title: "Threshold Session",
+          description: "20min warm up, 40min at threshold, 10min cool down",
+          duration: "70 min",
+          nutrition: "Diluted sports drink every 15 minutes"
+        }
+      ];
+    }
+    
+    // Default off-season suggestions
     return [
       {
         title: "Fasted Morning Run",
-        description: "Easy Zone 2 run following Nick's fasted training approach",
+        description: "Easy Zone 2 run following Nick's fasted training approach for fat adaptation",
         duration: "45-60 min",
-        nutrition: "Coffee protein shake post-workout"
+        nutrition: "Coffee protein shake post-workout within 30 minutes"
       },
       {
         title: "Tempo Bike Session",
-        description: "Sustained effort at race pace with liquid nutrition",
+        description: "Sustained effort at moderate pace with focus on aerodynamic position",
         duration: "75-90 min",
-        nutrition: "Diluted sports drink every 20 min"
+        nutrition: "Diluted sports drink (50/50 with water) every 20 min"
       },
       {
-        title: "Brick Workout",
-        description: "Bike-to-run transition practice for race preparation",
-        duration: "90 min total",
-        nutrition: "Electrolytes + 200 cal/hour from liquids"
+        title: "Base Building Swim",
+        description: "Technical swim session focusing on form and efficiency",
+        duration: "45-60 min",
+        nutrition: "Hydrate well before, protein-rich meal within hour after"
       }
     ];
   };

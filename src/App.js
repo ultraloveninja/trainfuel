@@ -1,5 +1,5 @@
 // src/App.js - Complete Integration with New Components
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Activity, Calendar, Download, RefreshCw, Settings, AlertCircle, Zap, Brain, Home, Utensils } from 'lucide-react';
 
 // Import services
@@ -9,7 +9,7 @@ import nutritionService from './services/nutritionService';
 // Import NEW components
 import WorkoutGenerator from './components/WorkoutGenerator';
 import NutritionTracker from './components/NutritionTracker';
-import EnhancedNutritionTracker from './components/EnhancedNutritionTracker';
+// import EnhancedNutritionTracker from './components/EnhancedNutritionTracker';
 import SettingsPage from './components/SettingsPage';
 
 // Import existing components
@@ -31,6 +31,11 @@ const App = () => {
   const [trainingData, setTrainingData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  
+  // Add rate limiting refs
+  const lastAICallRef = useRef(0);
+  const aiCallDebounceRef = useRef(null);
+  const MIN_TIME_BETWEEN_CALLS = 60000; // 1 minute minimum between AI calls
 
   // Settings state (NEW)
   const [userSettings, setUserSettings] = useState(() => {
@@ -91,37 +96,6 @@ const App = () => {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Handle food log updates
-  const handleFoodLogUpdate = (todayLog) => {
-    // Save today's log
-    setDailyFoodLog(todayLog);
-    
-    // Update history (keep last 30 days)
-    const updatedHistory = [...foodLogHistory];
-    const todayIndex = updatedHistory.findIndex(log => log.date === todayLog.date);
-    
-    if (todayIndex >= 0) {
-      updatedHistory[todayIndex] = todayLog;
-    } else {
-      updatedHistory.push(todayLog);
-    }
-    
-    // Keep only last 30 days
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const filteredHistory = updatedHistory.filter(log => 
-      new Date(log.date) > thirtyDaysAgo
-    );
-    
-    setFoodLogHistory(filteredHistory);
-    localStorage.setItem('trainfuel_food_log_history', JSON.stringify(filteredHistory));
-    
-    // Regenerate AI recommendations with new food data
-    if (aiRecommendationsEnabled) {
-      generateAIRecommendations();
-    }
-  };
-
   // UI state
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showAddEventModal, setShowAddEventModal] = useState(false);
@@ -133,6 +107,101 @@ const App = () => {
     return saved ? JSON.parse(saved) : true;
   });
   const [lastAiUpdate, setLastAiUpdate] = useState(null);
+
+  // Generate AI recommendations with rate limiting
+  const generateAIRecommendations = useCallback(async (force = false) => {
+    const now = Date.now();
+    const timeSinceLastCall = now - lastAICallRef.current;
+
+    if (!force && timeSinceLastCall < MIN_TIME_BETWEEN_CALLS) {
+      console.log(`Skipping AI call - too soon (${timeSinceLastCall}ms since last call)`);
+      return;
+    }
+
+    if (aiCallDebounceRef.current) {
+      clearTimeout(aiCallDebounceRef.current);
+    }
+    
+    // Debounce the actual call
+    aiCallDebounceRef.current = setTimeout(async () => {
+      console.log('Generating AI recommendations...');
+      setGeneratingNutrition(true);
+      setGeneratingWorkout(true);
+
+      try {
+        lastAICallRef.current = Date.now(); // Update last call time
+
+        const userData = {
+          athlete: {
+            age: userSettings.profile.age,
+            weight: userSettings.profile.weight,
+            height: userSettings.profile.height,
+            gender: userSettings.profile.gender
+          },
+          trainingData,
+          goals: userSettings.goals,
+          preferences: userSettings.foodPreferences,
+          dietaryRestrictions: userSettings.foodPreferences.restrictions,
+          recentFoodLog: foodLogHistory.slice(-7),
+          todaysFoodLog: dailyFoodLog
+        };
+
+        // Only call nutrition service if we have the data we need
+        if (userData.athlete && userData.athlete.weight) {
+          const nutrition = await nutritionService.generateDailyNutrition(userData);
+          setDailyNutrition(nutrition || {
+            meals: {
+              breakfast: { calories: 400, protein: 30, carbs: 45, fat: 10 },
+              lunch: { calories: 500, protein: 40, carbs: 50, fat: 15 },
+              dinner: { calories: 600, protein: 45, carbs: 60, fat: 20 },
+              snacks: { calories: 300, protein: 15, carbs: 40, fat: 10 }
+            },
+            hydration: { target: Math.round(userSettings.profile.weight / 2) },
+            totalCalories: 1800,
+            macros: { protein: 130, carbs: 195, fat: 55 }
+          });
+        }
+
+        setLastAiUpdate(new Date().toISOString());
+
+      } catch (err) {
+        console.error('Error generating AI recommendations:', err);
+        // Don't set error state to avoid re-renders
+      } finally {
+        setGeneratingNutrition(false);
+        setGeneratingWorkout(false);
+      }
+    }, 1000); // 1 second debounce
+  }, [trainingData, userSettings, foodLogHistory, dailyFoodLog]);
+
+  // Handle food log updates
+  const handleFoodLogUpdate = useCallback((todayLog) => {
+    // Save today's log
+    setDailyFoodLog(todayLog);
+
+    // Update history (keep last 30 days)
+    const updatedHistory = [...foodLogHistory];
+    const todayIndex = updatedHistory.findIndex(log => log.date === todayLog.date);
+
+    if (todayIndex >= 0) {
+      updatedHistory[todayIndex] = todayLog;
+    } else {
+      updatedHistory.push(todayLog);
+    }
+
+    // Keep only last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const filteredHistory = updatedHistory.filter(log =>
+      new Date(log.date) > thirtyDaysAgo
+    );
+
+    setFoodLogHistory(filteredHistory);
+    localStorage.setItem('trainfuel_food_log_history', JSON.stringify(filteredHistory));
+
+    // DON'T automatically regenerate AI recommendations
+    // User can manually refresh if needed
+  }, [foodLogHistory]);
 
   // Save settings to localStorage
   useEffect(() => {
@@ -208,12 +277,17 @@ const App = () => {
     }
   }, [isAuthenticated, athlete]);
 
-  // Generate AI recommendations when data is available
+  // Generate AI recommendations when data is available (with rate limiting)
   useEffect(() => {
+    // Only generate on initial load or when explicitly enabled
     if (trainingData && athlete && aiRecommendationsEnabled) {
-      generateAIRecommendations();
+      // Only call if we haven't called recently
+      const timeSinceLastCall = Date.now() - lastAICallRef.current;
+      if (timeSinceLastCall > MIN_TIME_BETWEEN_CALLS) {
+        generateAIRecommendations();
+      }
     }
-  }, [trainingData, athlete, aiRecommendationsEnabled]);
+  }, []); // Empty dependency array - only run once on mount
 
   // Fetch Strava activities
   const fetchActivities = async () => {
@@ -221,7 +295,7 @@ const App = () => {
     setError(null);
     try {
       const fetchedActivities = await stravaService.getActivities();
-      
+
       if (!fetchedActivities || !Array.isArray(fetchedActivities)) {
         console.log('No activities returned from Strava');
         setActivities([]);
@@ -230,12 +304,12 @@ const App = () => {
       }
 
       setActivities(fetchedActivities);
-      
+
       // Process activities for training data
       const processed = processStravaActivities(fetchedActivities);
       const weeklyStats = calculateWeeklyTSS(processed);
       const phase = analyzeTrainingPhase(processed);
-      
+
       setTrainingData({
         activities: processed,
         weeklyStats,
@@ -248,54 +322,6 @@ const App = () => {
       console.error('Fetch error:', err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Generate AI recommendations
-  const generateAIRecommendations = async () => {
-    console.log('Generating AI recommendations...');
-    setGeneratingNutrition(true);
-    setGeneratingWorkout(true);
-    
-    try {
-      const userData = {
-        athlete: {
-          age: userSettings.profile.age,
-          weight: userSettings.profile.weight,
-          height: userSettings.profile.height,
-          gender: userSettings.profile.gender
-        },
-        trainingData,
-        goals: userSettings.goals,
-        preferences: userSettings.foodPreferences,
-        dietaryRestrictions: userSettings.foodPreferences.restrictions,
-        recentFoodLog: foodLogHistory.slice(-7), // Last 7 days of food logs
-        todaysFoodLog: dailyFoodLog // Today's current food intake
-      };
-
-      // Generate nutrition plan
-      const nutrition = await nutritionService.generateDailyNutrition(userData) || {
-        meals: {
-          breakfast: { calories: 400, protein: 30, carbs: 45, fat: 10 },
-          lunch: { calories: 500, protein: 40, carbs: 50, fat: 15 },
-          dinner: { calories: 600, protein: 45, carbs: 60, fat: 20 },
-          snacks: { calories: 300, protein: 15, carbs: 40, fat: 10 }
-        },
-        hydration: { target: Math.round(userSettings.profile.weight / 2) },
-        totalCalories: 1800,
-        macros: { protein: 130, carbs: 195, fat: 55 }
-      };
-      setDailyNutrition(nutrition);
-
-      // The workout will be generated by the WorkoutGenerator component
-      setLastAiUpdate(new Date().toISOString());
-
-    } catch (err) {
-      console.error('Error generating AI recommendations:', err);
-      setError('Failed to generate recommendations');
-    } finally {
-      setGeneratingNutrition(false);
-      setGeneratingWorkout(false);
     }
   };
 
@@ -319,28 +345,33 @@ const App = () => {
     window.location.href = authUrl;
   };
 
-  // Handle refresh
+  // Handle refresh with rate limiting
   const handleRefresh = async () => {
     await fetchActivities();
     if (aiRecommendationsEnabled) {
-      await generateAIRecommendations();
+      await generateAIRecommendations(true); // Force = true to bypass rate limit check
     }
   };
 
-  // Handle settings save
-  const handleSettingsSave = (newSettings) => {
+  // Handle settings save without triggering AI
+  const handleSettingsSave = useCallback((newSettings) => {
     setUserSettings(newSettings);
-    // Trigger re-generation if AI is enabled
-    if (aiRecommendationsEnabled) {
-      generateAIRecommendations();
-    }
-  };
+    // DON'T automatically trigger AI regeneration
+    console.log('Settings saved. Click refresh to update AI recommendations.');
+  }, []);
 
-  // Toggle AI recommendations
+  // Toggle AI recommendations with rate limiting
   const toggleAIRecommendations = () => {
-    setAiRecommendationsEnabled(!aiRecommendationsEnabled);
-    if (!aiRecommendationsEnabled) {
-      generateAIRecommendations();
+    const newState = !aiRecommendationsEnabled;
+    setAiRecommendationsEnabled(newState);
+    if (newState) {
+      // Only generate if we haven't called recently
+      const timeSinceLastCall = Date.now() - lastAICallRef.current;
+      if (timeSinceLastCall > MIN_TIME_BETWEEN_CALLS) {
+        generateAIRecommendations(true);
+      } else {
+        console.log('AI enabled but waiting for rate limit cooldown');
+      }
     }
   };
 
@@ -365,8 +396,8 @@ const App = () => {
                 <button
                   onClick={toggleAIRecommendations}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors ${
-                    aiRecommendationsEnabled 
-                      ? 'bg-green-100 text-green-700' 
+                    aiRecommendationsEnabled
+                      ? 'bg-green-100 text-green-700'
                       : 'bg-gray-100 text-gray-700'
                   }`}
                 >

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Utensils, Clock, Flame, Target, Info, ChefHat, Plus, Search, X, Check, TrendingUp, Calendar } from 'lucide-react';
 
 // Common foods database (simplified - you could expand this or use an API)
@@ -41,6 +41,7 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
   const [loading, setLoading] = useState(false);
   const [selectedMeal, setSelectedMeal] = useState('breakfast');
   const [customSuggestions, setCustomSuggestions] = useState([]);
+  const isInitialMount = useRef(true);
   
   // Food logging state
   const [todaysFoodLog, setTodaysFoodLog] = useState(() => {
@@ -75,11 +76,19 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
 
   // Save food log to localStorage whenever it changes
   useEffect(() => {
+    // Skip the initial mount
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    
     localStorage.setItem('trainfuel_today_food_log', JSON.stringify(todaysFoodLog));
+    
+    // Only call parent update if provided and data actually changed
     if (onFoodLogUpdate) {
       onFoodLogUpdate(todaysFoodLog);
     }
-  }, [todaysFoodLog, onFoodLogUpdate]);
+  }, [todaysFoodLog]);
 
   // Calculate consumed macros
   const calculateConsumedMacros = () => {
