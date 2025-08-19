@@ -8,8 +8,8 @@ import nutritionService from './services/nutritionService';
 
 // Import NEW components
 import WorkoutGenerator from './components/WorkoutGenerator';
-import NutritionTracker from './components/NutritionTracker';
-// import EnhancedNutritionTracker from './components/EnhancedNutritionTracker';
+//import NutritionTracker from './components/NutritionTracker';
+import EnhancedNutritionTracker from './components/EnhancedNutritionTracker';
 import SettingsPage from './components/SettingsPage';
 
 // Import existing components
@@ -31,7 +31,7 @@ const App = () => {
   const [trainingData, setTrainingData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  
+
   // Add rate limiting refs
   const lastAICallRef = useRef(0);
   const aiCallDebounceRef = useRef(null);
@@ -121,7 +121,7 @@ const App = () => {
     if (aiCallDebounceRef.current) {
       clearTimeout(aiCallDebounceRef.current);
     }
-    
+
     // Debounce the actual call
     aiCallDebounceRef.current = setTimeout(async () => {
       console.log('Generating AI recommendations...');
@@ -395,11 +395,10 @@ const App = () => {
                 {/* AI Toggle */}
                 <button
                   onClick={toggleAIRecommendations}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors ${
-                    aiRecommendationsEnabled
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors ${aiRecommendationsEnabled
                       ? 'bg-green-100 text-green-700'
                       : 'bg-gray-100 text-gray-700'
-                  }`}
+                    }`}
                 >
                   <Brain className="w-4 h-4" />
                   <span className="text-sm">AI {aiRecommendationsEnabled ? 'ON' : 'OFF'}</span>
@@ -427,55 +426,50 @@ const App = () => {
               <nav className="flex space-x-8">
                 <button
                   onClick={() => setActiveTab('dashboard')}
-                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                    activeTab === 'dashboard'
+                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'dashboard'
                       ? 'border-blue-500 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   <Home className="w-4 h-4 inline mr-2" />
                   Dashboard
                 </button>
                 <button
                   onClick={() => setActiveTab('workout')}
-                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                    activeTab === 'workout'
+                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'workout'
                       ? 'border-blue-500 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   <Activity className="w-4 h-4 inline mr-2" />
                   Today's Workout
                 </button>
                 <button
                   onClick={() => setActiveTab('nutrition')}
-                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                    activeTab === 'nutrition'
+                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'nutrition'
                       ? 'border-blue-500 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   <Utensils className="w-4 h-4 inline mr-2" />
                   Nutrition
                 </button>
                 <button
                   onClick={() => setActiveTab('calendar')}
-                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                    activeTab === 'calendar'
+                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'calendar'
                       ? 'border-blue-500 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   <Calendar className="w-4 h-4 inline mr-2" />
                   Calendar
                 </button>
                 <button
                   onClick={() => setActiveTab('settings')}
-                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                    activeTab === 'settings'
+                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'settings'
                       ? 'border-blue-500 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   <Settings className="w-4 h-4 inline mr-2" />
                   Settings
@@ -518,7 +512,7 @@ const App = () => {
               )}
 
               {activeTab === 'nutrition' && (
-                <NutritionTracker
+                <EnhancedNutritionTracker
                   trainingData={trainingData}
                   foodLog={foodLogHistory}
                   userPreferences={userSettings.foodPreferences}

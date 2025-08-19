@@ -11,6 +11,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
   const [edamamResults, setEdamamResults] = useState([]);
   const [selectedPortion, setSelectedPortion] = useState({});
   const searchDebounceRef = useRef(null);
+  const isInitialMount = useRef(true);
   
   // Food logging state
   const [todaysFoodLog, setTodaysFoodLog] = useState(() => {
@@ -47,11 +48,19 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
 
   // Save food log to localStorage whenever it changes
   useEffect(() => {
+    // Skip the initial mount to prevent infinite loop
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    
     localStorage.setItem('trainfuel_today_food_log', JSON.stringify(todaysFoodLog));
+    
+    // Only call parent update if provided
     if (onFoodLogUpdate) {
       onFoodLogUpdate(todaysFoodLog);
     }
-  }, [todaysFoodLog, onFoodLogUpdate]);
+  }, [todaysFoodLog]);
 
   // Search Edamam with debounce
   useEffect(() => {
@@ -219,6 +228,104 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
     }));
   };
 
+  // Generate smart meal suggestions based on remaining macros
+  const generateSmartSuggestions = () => {
+    const remaining = calculateRemainingMacros();
+    const suggestions = [];
+    
+    // Determine what meal time it is
+    const hour = new Date().getHours();
+    let nextMeal = 'snacks';
+    if (hour < 10) nextMeal = 'breakfast';
+    else if (hour < 14) nextMeal = 'lunch';
+    else if (hour < 20) nextMeal = 'dinner';
+    
+    // High protein, moderate carb suggestions if protein is low
+    if (remaining.protein > 30) {
+      suggestions.push({
+        name: "Grilled Chicken Power Bowl",
+        meal: nextMeal,
+        description: "High-protein meal perfect for recovery after training",
+        instructions: "Grill 6oz chicken breast, serve over quinoa with roasted vegetables and tahini dressing",
+        calories: 450,
+        protein: 42,
+        carbs: 35,
+        fat: 12
+      });
+    }
+    
+    // Balanced meal if all macros are moderate
+    if (remaining.calories > 400 && remaining.protein > 20 && remaining.carbs > 30) {
+      suggestions.push({
+        name: "Salmon & Sweet Potato",
+        meal: nextMeal,
+        description: "Balanced meal with omega-3s for inflammation reduction",
+        instructions: "Bake 5oz salmon with herbs, roast sweet potato wedges, steam broccoli",
+        calories: 420,
+        protein: 35,
+        carbs: 32,
+        fat: 14
+      });
+    }
+    
+    // Quick carb-focused meal for pre/post workout
+    if (remaining.carbs > 40) {
+      suggestions.push({
+        name: "Energy Oatmeal Bowl",
+        meal: nextMeal === 'dinner' ? 'snacks' : nextMeal,
+        description: "Perfect for fueling your next workout or recovery",
+        instructions: "Cook 1 cup oats, top with banana, berries, honey, and a scoop of protein powder",
+        calories: 380,
+        protein: 25,
+        carbs: 58,
+        fat: 8
+      });
+    }
+    
+    // Light snack option if calories are low
+    if (remaining.calories < 300) {
+      suggestions.push({
+        name: "Greek Yogurt Parfait",
+        meal: "snacks",
+        description: "Light, protein-rich snack",
+        instructions: "Layer Greek yogurt with granola and berries",
+        calories: 200,
+        protein: 18,
+        carbs: 24,
+        fat: 4
+      });
+    }
+    
+    // If very high calories remaining, suggest a full meal
+    if (remaining.calories > 600) {
+      suggestions.push({
+        name: "Turkey & Avocado Wrap",
+        meal: nextMeal,
+        description: "Satisfying meal with healthy fats",
+        instructions: "Whole wheat tortilla with 4oz turkey, avocado, lettuce, tomato, and hummus",
+        calories: 520,
+        protein: 35,
+        carbs: 42,
+        fat: 22
+      });
+    }
+    
+    // Always include a Nick Chase-style liquid option
+    suggestions.push({
+      name: "Recovery Smoothie",
+      meal: "snacks",
+      description: "Nick Chase-approved liquid nutrition for easy digestion",
+      instructions: "Blend: 1 banana, 1 scoop protein, 1 cup almond milk, 1 tbsp almond butter, spinach",
+      calories: 320,
+      protein: 28,
+      carbs: 35,
+      fat: 10
+    });
+    
+    // Return top 3 suggestions
+    return suggestions.slice(0, 3);
+  };
+
   // Update water intake
   const updateWaterIntake = (amount) => {
     setTodaysFoodLog(prev => ({
@@ -232,10 +339,10 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
   const targetCalories = mealPlan?.dailyCalories || 2000;
   const percentageConsumed = Math.round((consumed.calories / targetCalories) * 100);
 
-  // Generate meal plan (your existing logic)
+  // Generate meal plan (your existing logic) - only on mount and when props change
   useEffect(() => {
     generateMealPlan();
-  }, [trainingData, userPreferences]);
+  }, []); // Empty dependency array - only run on mount
 
   const generateMealPlan = async () => {
     setLoading(true);
@@ -685,7 +792,50 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
         <p className="text-sm text-gray-600 mb-4">
           Based on your remaining macros and training schedule, here are personalized meal ideas:
         </p>
-        {/* Your existing AI suggestions component can go here */}
+        
+        {/* Display suggestions based on remaining macros */}
+        <div className="grid gap-4">
+          {generateSmartSuggestions().map((suggestion, index) => (
+            <div key={index} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+              <div className="flex justify-between items-start mb-2">
+                <h4 className="font-semibold text-lg">{suggestion.name}</h4>
+                <span className="text-sm bg-gray-100 px-2 py-1 rounded">
+                  {suggestion.meal}
+                </span>
+              </div>
+              
+              <p className="text-sm text-gray-600 mb-3">{suggestion.description}</p>
+              
+              <div className="mb-3">
+                <p className="text-sm text-gray-600 font-medium mb-1">Quick Recipe:</p>
+                <p className="text-sm text-gray-700">{suggestion.instructions}</p>
+              </div>
+
+              <div className="flex gap-3 pt-3 border-t">
+                <span className="text-xs bg-orange-50 text-orange-700 px-2 py-1 rounded">
+                  {suggestion.calories} cal
+                </span>
+                <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded">
+                  {suggestion.protein}g protein
+                </span>
+                <span className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded">
+                  {suggestion.carbs}g carbs
+                </span>
+                <span className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded">
+                  {suggestion.fat}g fat
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+        
+        {/* Quick add buttons for suggestions */}
+        <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+          <p className="text-sm text-blue-900 mb-2">
+            💡 <strong>Pro Tip:</strong> These meals are optimized to hit your remaining macros for today.
+            Click "Add Food" above to log any of these suggestions using the search or natural language features.
+          </p>
+        </div>
       </div>
 
       {/* Nick Chase Tips */}
