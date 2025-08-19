@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Activity, Clock, TrendingUp, AlertCircle } from 'lucide-react';
+import { Calendar, Activity, Clock, TrendingUp, AlertCircle, Brain, Loader, Zap } from 'lucide-react';
 
 // Nick Chase Training Methods based on project knowledge
 const NICK_CHASE_METHODS = {
@@ -47,8 +47,8 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
   const [tomorrowsWorkout, setTomorrowsWorkout] = useState(null);
   const [workoutSuggestions, setWorkoutSuggestions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [fatiguLevel, setFatiguLevel] = useState('moderate');
-  const [selectedDay, setSelectedDay] = useState('today'); // Toggle between today and tomorrow
+  const [fatigueLevel, setFatigueLevel] = useState('moderate');
+  const [selectedDay, setSelectedDay] = useState('today');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiWorkouts, setAiWorkouts] = useState(null);
   const [lastAiGeneration, setLastAiGeneration] = useState(null);
@@ -63,7 +63,7 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
     const last7Days = recentActivities.slice(0, 7);
     const totalStress = last7Days.reduce((acc, activity) => {
       const intensity = activity.average_heartrate / activity.max_heartrate || 0.7;
-      const duration = activity.moving_time / 3600; // Convert to hours
+      const duration = activity.moving_time / 3600;
       return acc + (intensity * duration);
     }, 0);
 
@@ -76,27 +76,21 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
     setLoading(true);
     
     try {
-      // Analyze recent training from Strava
       const fatigue = analyzeFatigueLevel(stravaData?.activities);
-      setFatiguLevel(fatigue);
+      setFatigueLevel(fatigue);
 
-      // Get appropriate training plan
       const trainingPlan = isInSeason ? NICK_CHASE_METHODS.inSeason : NICK_CHASE_METHODS.offSeason;
       
-      // Get today's date and tomorrow's date
       const today = new Date();
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
       
-      // Get day names
       const todayName = today.toLocaleDateString('en-US', { weekday: 'long' });
       const tomorrowName = tomorrow.toLocaleDateString('en-US', { weekday: 'long' });
       
-      // Find scheduled workouts
       const todayScheduled = trainingPlan.weeklyStructure.find(w => w.day === todayName);
       const tomorrowScheduled = trainingPlan.weeklyStructure.find(w => w.day === tomorrowName);
       
-      // Adjust today's workout based on fatigue
       let todayWorkout = { ...todayScheduled };
       if (fatigue === 'high' && todayWorkout.type !== 'easy') {
         todayWorkout = {
@@ -108,16 +102,12 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
         };
       }
       
-      // Adjust tomorrow's workout based on today's workout and projected fatigue
       let tomorrowWorkout = { ...tomorrowScheduled };
       let projectedFatigue = fatigue;
       
-      // If doing hard workout today, tomorrow might need to be easier
       if (todayWorkout.type === 'intervals' || todayWorkout.type === 'tempo') {
         projectedFatigue = fatigue === 'fresh' ? 'moderate' : 'high';
-      }
-      // If resting today, tomorrow can be harder
-      else if (todayWorkout.type === 'easy') {
+      } else if (todayWorkout.type === 'easy') {
         projectedFatigue = fatigue === 'high' ? 'moderate' : 'fresh';
       }
       
@@ -131,11 +121,9 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
         };
       }
 
-      // Add specific details from training methods
       const todayDetails = trainingPlan.workoutTypes[todayWorkout.type];
       const tomorrowDetails = trainingPlan.workoutTypes[tomorrowWorkout.type];
       
-      // Check for upcoming events and adjust
       let eventAdjustment = null;
       if (upcomingEvents && upcomingEvents.length > 0) {
         const nextEvent = upcomingEvents[0];
@@ -150,13 +138,12 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
         }
       }
 
-      // Generate AI-powered suggestions
       const suggestions = await generateAISuggestions(todayWorkout, fatigue, stravaData);
 
       setTodaysWorkout({
         ...todayWorkout,
         ...todayDetails,
-        fatiguLevel: fatigue,
+        fatigueLevel: fatigue,
         eventAdjustment,
         dayName: todayName,
         date: today.toLocaleDateString(),
@@ -176,7 +163,6 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
       
     } catch (error) {
       console.error('Error generating workout:', error);
-      // Fallback to basic workout
       setTodaysWorkout({
         type: 'easy',
         discipline: 'run',
@@ -199,89 +185,60 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
   };
 
   const generateAISuggestions = async (workout, fatigue, stravaData) => {
-    // Return fallback suggestions immediately instead of calling API
-    // The API should only be called when user explicitly requests it
-    console.log('Using cached workout suggestions to avoid rate limiting');
-    return getFallbackSuggestions(workout, fatigue, stravaData);
-  // Keep the existing suggestion function for backward compatibility
-  const generateAISuggestions = async (workout, fatigue, stravaData) => {
-    // Return fallback suggestions immediately
     console.log('Using cached workout suggestions to avoid rate limiting');
     return getFallbackSuggestions(workout, fatigue, stravaData);
   };
 
-  // Keep the existing fallback functions
+  const generateAIWorkouts = async () => {
+    try {
+      setAiLoading(true);
+      const today = await generateAISuggestions(todaysWorkout, fatigueLevel, stravaData);
+      const tomorrow = await generateAISuggestions(tomorrowsWorkout, fatigueLevel, stravaData);
+
+      setAiWorkouts({
+        todayPrimary: today[0],
+        todayAlternatives: today.slice(1),
+        tomorrowPrimary: tomorrow[0],
+        tomorrowAlternatives: tomorrow.slice(1),
+        weekTips: {
+          keyFocus: "Balance intensity with recovery",
+          recoveryDays: ["Monday", "Thursday"],
+          nutritionFocus: "Stay on top of hydration and carbs",
+          mentalPrep: "Visualize key workouts to build confidence"
+        }
+      });
+      setLastAiGeneration(new Date().toISOString());
+    } catch (err) {
+      console.error("AI workout generation failed:", err);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   const getFallbackSuggestions = (workout, fatigue, stravaData) => {
-    // Dynamic fallback suggestions based on current state
     const isHighFatigue = fatigue === 'high';
     const isInSeasonMode = isInSeason;
     
     if (isHighFatigue) {
       return [
-        {
-          title: "Recovery Swim",
-          description: "Easy swim focusing on form and breathing technique",
-          duration: "30-45 min",
-          nutrition: "Water only, protein shake post-workout"
-        },
-        {
-          title: "Yoga/Stretching",
-          description: "Active recovery with focus on flexibility and mobility",
-          duration: "30-45 min",
-          nutrition: "Stay hydrated, light snack if needed"
-        },
-        {
-          title: "Easy Spin",
-          description: "Very light bike ride, keeping heart rate in Zone 1",
-          duration: "45-60 min",
-          nutrition: "Electrolytes only during, recovery meal after"
-        }
+        { title: "Recovery Swim", description: "Easy swim focusing on form and breathing technique", duration: "30-45 min", nutrition: "Water only, protein shake post-workout" },
+        { title: "Yoga/Stretching", description: "Active recovery with focus on flexibility and mobility", duration: "30-45 min", nutrition: "Stay hydrated, light snack if needed" },
+        { title: "Easy Spin", description: "Very light bike ride, keeping heart rate in Zone 1", duration: "45-60 min", nutrition: "Electrolytes only during, recovery meal after" }
       ];
     }
     
     if (isInSeasonMode) {
       return [
-        {
-          title: "Race Pace Intervals",
-          description: "Warm up, then 3x10min at race pace with 3min recovery",
-          duration: "60-75 min",
-          nutrition: "Sports drink during, 30-40g carbs per hour"
-        },
-        {
-          title: "Brick Workout",
-          description: "60min bike at moderate pace, immediate 20min run at race pace",
-          duration: "80 min total",
-          nutrition: "Liquid nutrition on bike, electrolytes on run"
-        },
-        {
-          title: "Threshold Session",
-          description: "20min warm up, 40min at threshold, 10min cool down",
-          duration: "70 min",
-          nutrition: "Diluted sports drink every 15 minutes"
-        }
+        { title: "Race Pace Intervals", description: "Warm up, then 3x10min at race pace with 3min recovery", duration: "60-75 min", nutrition: "Sports drink during, 30-40g carbs per hour" },
+        { title: "Brick Workout", description: "60min bike at moderate pace, immediate 20min run at race pace", duration: "80 min total", nutrition: "Liquid nutrition on bike, electrolytes on run" },
+        { title: "Threshold Session", description: "20min warm up, 40min at threshold, 10min cool down", duration: "70 min", nutrition: "Diluted sports drink every 15 minutes" }
       ];
     }
-    
-    // Default off-season suggestions
+
     return [
-      {
-        title: "Fasted Morning Run",
-        description: "Easy Zone 2 run following Nick's fasted training approach for fat adaptation",
-        duration: "45-60 min",
-        nutrition: "Coffee protein shake post-workout within 30 minutes"
-      },
-      {
-        title: "Tempo Bike Session",
-        description: "Sustained effort at moderate pace with focus on aerodynamic position",
-        duration: "75-90 min",
-        nutrition: "Diluted sports drink (50/50 with water) every 20 min"
-      },
-      {
-        title: "Base Building Swim",
-        description: "Technical swim session focusing on form and efficiency",
-        duration: "45-60 min",
-        nutrition: "Hydrate well before, protein-rich meal within hour after"
-      }
+      { title: "Fasted Morning Run", description: "Easy Zone 2 run following Nick's fasted training approach for fat adaptation", duration: "45-60 min", nutrition: "Coffee protein shake post-workout within 30 minutes" },
+      { title: "Tempo Bike Session", description: "Sustained effort at moderate pace with focus on aerodynamic position", duration: "75-90 min", nutrition: "Diluted sports drink (50/50 with water) every 20 min" },
+      { title: "Base Building Swim", description: "Technical swim session focusing on form and efficiency", duration: "45-60 min", nutrition: "Hydrate well before, protein-rich meal within hour after" }
     ];
   };
 
@@ -427,7 +384,7 @@ const WorkoutGenerator = ({ stravaData, upcomingEvents, isInSeason }) => {
               {selectedDay === 'today' ? (
                 <>
                   <p className="text-sm text-white/80">
-                    <strong>Current Fatigue Level:</strong> {fatiguLevel}
+                    <strong>Current Fatigue Level:</strong> {fatigueLevel}
                   </p>
                   <p className="text-sm text-white/80 mt-1">
                     <strong>Training Philosophy:</strong> {
