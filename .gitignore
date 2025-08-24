@@ -65,3 +65,7 @@ logs
 # Temporary folders
 tmp/
 temp/
+
+# firebase
+.firebase/
+functions/.env

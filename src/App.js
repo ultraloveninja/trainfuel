@@ -1,18 +1,21 @@
-// src/App.js - Complete Integration with New Components
+// src/App.js - Complete Firebase Integration
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Activity, Calendar, Download, RefreshCw, Settings, AlertCircle, Zap, Brain, Home, Utensils } from 'lucide-react';
 
-// Import services
+// Import Firebase services (you'll create these)
+import { auth, db, functions } from './config/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+
+// Import existing services
 import stravaService from './services/stravaService';
 import nutritionService from './services/nutritionService';
 
-// Import NEW components
+// Import components
 import WorkoutGenerator from './components/WorkoutGenerator';
-//import NutritionTracker from './components/NutritionTracker';
 import EnhancedNutritionTracker from './components/EnhancedNutritionTracker';
 import SettingsPage from './components/SettingsPage';
-
-// Import existing components
 import StravaAuth from './components/StravaAuth';
 import DashboardView from './components/DashboardView';
 import CalendarView from './components/CalendarView';
@@ -24,6 +27,10 @@ import { processStravaActivities, calculateWeeklyTSS, analyzeTrainingPhase } fro
 import { loadEventsFromStorage, saveEventsToStorage } from './utils/storageUtils';
 
 const App = () => {
+  // Firebase user state
+  const [firebaseUser, setFirebaseUser] = useState(null);
+  const [firebaseLoading, setFirebaseLoading] = useState(true);
+  
   // Core state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [athlete, setAthlete] = useState(null);
@@ -32,243 +39,151 @@ const App = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Add rate limiting refs
+  // Rate limiting refs
   const lastAICallRef = useRef(0);
   const aiCallDebounceRef = useRef(null);
-  const MIN_TIME_BETWEEN_CALLS = 60000; // 1 minute minimum between AI calls
+  const MIN_TIME_BETWEEN_CALLS = 60000;
 
-  // Settings state (NEW)
+  // Settings state
   const [userSettings, setUserSettings] = useState(() => {
     const saved = localStorage.getItem('trainfuelSettings');
     return saved ? JSON.parse(saved) : {
       profile: {
-        name: '',
-        age: 46,
-        height: '6\'2"',
-        weight: 204,
-        gender: 'male'
+        age: '',
+        weight: '',
+        height: '',
+        fitnessLevel: 'intermediate',
+        dietaryRestrictions: []
       },
       goals: {
-        primaryGoal: 'weight_loss',
-        targetWeight: 195,
-        targetDate: '',
-        currentPhase: 'in_season'
+        primaryGoal: 'endurance',
+        targetWeight: '',
+        weeklyTrainingHours: 10
       },
-      foodPreferences: {
-        dietType: 'balanced',
-        restrictions: [],
-        allergies: [],
-        favoriteFoods: [],
-        dislikedFoods: [],
+      preferences: {
         mealPrepDay: 'sunday',
-        cookingTime: 'moderate'
-      },
-      trainingPreferences: {
-        preferredTime: 'morning',
-        alternativeTime: 'afternoon',
-        weeklyHours: 8,
-        raceDistance: 'half_ironman'
-      },
-      notifications: {
-        mealReminders: true,
-        workoutReminders: true,
-        hydrationReminders: true,
-        reminderTime: '07:00'
+        cookingSkill: 'intermediate',
+        budget: 'moderate'
       }
     };
-  });
-
-  // Nutrition and AI state
-  const [nutritionPlan, setNutritionPlan] = useState(null);
-  const [dailyNutrition, setDailyNutrition] = useState(null);
-  const [dailyWorkout, setDailyWorkout] = useState(null);
-  const [generatingNutrition, setGeneratingNutrition] = useState(false);
-  const [generatingWorkout, setGeneratingWorkout] = useState(false);
-
-  // Food logging with history
-  const [foodLogHistory, setFoodLogHistory] = useState(() => {
-    const saved = localStorage.getItem('trainfuel_food_log_history');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [dailyFoodLog, setDailyFoodLog] = useState(() => {
-    const saved = localStorage.getItem('trainfuel_daily_food_log');
-    return saved ? JSON.parse(saved) : [];
   });
 
   // UI state
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [showAddEventModal, setShowAddEventModal] = useState(false);
-  const [upcomingEvents, setUpcomingEvents] = useState(loadEventsFromStorage());
-
-  // AI features
-  const [aiRecommendationsEnabled, setAiRecommendationsEnabled] = useState(() => {
-    const saved = localStorage.getItem('trainfuel_ai_enabled');
-    return saved ? JSON.parse(saved) : true;
+  const [activeView, setActiveView] = useState('dashboard');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [upcomingEvents, setUpcomingEvents] = useState(() => loadEventsFromStorage());
+  const [foodLog, setFoodLog] = useState(() => {
+    const saved = localStorage.getItem('trainfuel_food_log');
+    return saved ? JSON.parse(saved) : {};
   });
-  const [lastAiUpdate, setLastAiUpdate] = useState(null);
+  const [syncStatus, setSyncStatus] = useState({ syncing: false, lastSync: null });
+  const [nutritionPlans, setNutritionPlans] = useState([]);
+  const [aiRecommendationsEnabled, setAiRecommendationsEnabled] = useState(true);
 
-  // Generate AI recommendations with rate limiting
-  const generateAIRecommendations = useCallback(async (force = false) => {
-    const now = Date.now();
-    const timeSinceLastCall = now - lastAICallRef.current;
-
-    if (!force && timeSinceLastCall < MIN_TIME_BETWEEN_CALLS) {
-      console.log(`Skipping AI call - too soon (${timeSinceLastCall}ms since last call)`);
-      return;
-    }
-
-    if (aiCallDebounceRef.current) {
-      clearTimeout(aiCallDebounceRef.current);
-    }
-
-    // Debounce the actual call
-    aiCallDebounceRef.current = setTimeout(async () => {
-      console.log('Generating AI recommendations...');
-      setGeneratingNutrition(true);
-      setGeneratingWorkout(true);
-
-      try {
-        lastAICallRef.current = Date.now(); // Update last call time
-
-        const userData = {
-          athlete: {
-            age: userSettings.profile.age,
-            weight: userSettings.profile.weight,
-            height: userSettings.profile.height,
-            gender: userSettings.profile.gender
-          },
-          trainingData,
-          goals: userSettings.goals,
-          preferences: userSettings.foodPreferences,
-          dietaryRestrictions: userSettings.foodPreferences.restrictions,
-          recentFoodLog: foodLogHistory.slice(-7),
-          todaysFoodLog: dailyFoodLog
-        };
-
-        // Only call nutrition service if we have the data we need
-        if (userData.athlete && userData.athlete.weight) {
-          const nutrition = await nutritionService.generateDailyNutrition(userData);
-          setDailyNutrition(nutrition || {
-            meals: {
-              breakfast: { calories: 400, protein: 30, carbs: 45, fat: 10 },
-              lunch: { calories: 500, protein: 40, carbs: 50, fat: 15 },
-              dinner: { calories: 600, protein: 45, carbs: 60, fat: 20 },
-              snacks: { calories: 300, protein: 15, carbs: 40, fat: 10 }
-            },
-            hydration: { target: Math.round(userSettings.profile.weight / 2) },
-            totalCalories: 1800,
-            macros: { protein: 130, carbs: 195, fat: 55 }
-          });
-        }
-
-        setLastAiUpdate(new Date().toISOString());
-
-      } catch (err) {
-        console.error('Error generating AI recommendations:', err);
-        // Don't set error state to avoid re-renders
-      } finally {
-        setGeneratingNutrition(false);
-        setGeneratingWorkout(false);
-      }
-    }, 1000); // 1 second debounce
-  }, [trainingData, userSettings, foodLogHistory, dailyFoodLog]);
-
-  // Handle food log updates
-  const handleFoodLogUpdate = useCallback((todayLog) => {
-    // Save today's log
-    setDailyFoodLog(todayLog);
-
-    // Update history (keep last 30 days)
-    const updatedHistory = [...foodLogHistory];
-    const todayIndex = updatedHistory.findIndex(log => log.date === todayLog.date);
-
-    if (todayIndex >= 0) {
-      updatedHistory[todayIndex] = todayLog;
-    } else {
-      updatedHistory.push(todayLog);
-    }
-
-    // Keep only last 30 days
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const filteredHistory = updatedHistory.filter(log =>
-      new Date(log.date) > thirtyDaysAgo
-    );
-
-    setFoodLogHistory(filteredHistory);
-    localStorage.setItem('trainfuel_food_log_history', JSON.stringify(filteredHistory));
-
-    // DON'T automatically regenerate AI recommendations
-    // User can manually refresh if needed
-  }, [foodLogHistory]);
-
-  // Save settings to localStorage
+  // Firebase Auth Observer
   useEffect(() => {
-    localStorage.setItem('trainfuelSettings', JSON.stringify(userSettings));
-  }, [userSettings]);
-
-  useEffect(() => {
-    localStorage.setItem('trainfuel_daily_food_log', JSON.stringify(dailyFoodLog));
-  }, [dailyFoodLog]);
-
-  useEffect(() => {
-    localStorage.setItem('trainfuel_ai_enabled', JSON.stringify(aiRecommendationsEnabled));
-  }, [aiRecommendationsEnabled]);
-
-  useEffect(() => {
-    saveEventsToStorage(upcomingEvents);
-  }, [upcomingEvents]);
-
-  // Check authentication on mount
-  useEffect(() => {
-    const checkAuth = async () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const code = urlParams.get('code');
-
-      if (code) {
-        // Handle OAuth callback
-        setLoading(true);
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setFirebaseLoading(false);
+      
+      if (user) {
+        setFirebaseUser(user);
+        
+        // Load user data from Firestore
         try {
-          const result = await stravaService.exchangeToken(code);
-          setAthlete(result.athlete);
-          setIsAuthenticated(true);
-          window.history.replaceState({}, document.title, window.location.pathname);
-        } catch (err) {
-          setError('Failed to authenticate with Strava');
-          console.error('Auth error:', err);
-        } finally {
-          setLoading(false);
-        }
-      } else {
-        // Check if already authenticated
-        const authenticated = stravaService.isAuthenticated();
-        console.log('Auth check on mount:', authenticated);
-        if (authenticated) {
-          const savedAthlete = localStorage.getItem('strava_athlete');
-          if (savedAthlete) {
-            const athleteData = JSON.parse(savedAthlete);
-            console.log('Setting athlete data:', athleteData);
-            setAthlete(athleteData);
-            setIsAuthenticated(true);
-          } else {
-            console.log('No saved athlete data, fetching...');
-            // Fetch athlete data if not saved
-            try {
-              const athleteData = await stravaService.getAthlete();
-              setAthlete(athleteData);
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            
+            // Set athlete data from Firestore
+            if (userData.stravaProfile) {
+              setAthlete(userData.stravaProfile);
               setIsAuthenticated(true);
-              localStorage.setItem('strava_athlete', JSON.stringify(athleteData));
-            } catch (err) {
-              console.error('Failed to fetch athlete:', err);
+            }
+            
+            // Load user settings from Firestore
+            if (userData.settings) {
+              setUserSettings(userData.settings);
+            }
+            
+            // Load cached activities from Firestore
+            if (userData.cachedActivities) {
+              setActivities(userData.cachedActivities);
+              processActivitiesData(userData.cachedActivities);
             }
           }
+        } catch (err) {
+          console.error('Error loading user data from Firestore:', err);
+        }
+      } else {
+        setFirebaseUser(null);
+        // Check for local Strava auth
+        checkLocalStravaAuth();
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Check local Strava authentication (fallback for non-Firebase users)
+  const checkLocalStravaAuth = async () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+
+    if (code) {
+      // Handle OAuth callback
+      setLoading(true);
+      try {
+        const result = await stravaService.exchangeToken(code);
+        
+        // Create or update Firebase user if needed
+        if (firebaseUser) {
+          await updateFirebaseUserWithStrava(firebaseUser.uid, result);
+        } else {
+          // For now, just use local storage
+          setAthlete(result.athlete);
+          setIsAuthenticated(true);
+        }
+        
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch (err) {
+        setError('Failed to authenticate with Strava');
+        console.error('Auth error:', err);
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // Check if already authenticated locally
+      const authenticated = stravaService.isAuthenticated();
+      if (authenticated) {
+        const savedAthlete = localStorage.getItem('strava_athlete');
+        if (savedAthlete) {
+          const athleteData = JSON.parse(savedAthlete);
+          setAthlete(athleteData);
+          setIsAuthenticated(true);
         }
       }
-    };
+    }
+  };
 
-    checkAuth();
-  }, []);
+  // Update Firebase user with Strava data
+  const updateFirebaseUserWithStrava = async (userId, stravaData) => {
+    try {
+      await setDoc(doc(db, 'users', userId), {
+        stravaProfile: stravaData.athlete,
+        stravaTokens: {
+          access_token: stravaData.access_token,
+          refresh_token: stravaData.refresh_token,
+          expires_at: stravaData.expires_at
+        },
+        lastLogin: new Date().toISOString()
+      }, { merge: true });
+      
+      setAthlete(stravaData.athlete);
+      setIsAuthenticated(true);
+    } catch (err) {
+      console.error('Error updating Firebase user:', err);
+    }
+  };
 
   // Fetch activities when authenticated
   useEffect(() => {
@@ -277,66 +192,195 @@ const App = () => {
     }
   }, [isAuthenticated, athlete]);
 
-  // Generate AI recommendations when data is available (with rate limiting)
+  // Generate AI recommendations when data is available
   useEffect(() => {
-    // Only generate on initial load or when explicitly enabled
     if (trainingData && athlete && aiRecommendationsEnabled) {
-      // Only call if we haven't called recently
       const timeSinceLastCall = Date.now() - lastAICallRef.current;
-      if (timeSinceLastCall > MIN_TIME_BETWEEN_CALLS) {
-        generateAIRecommendations();
+      if (timeSinceLastCall >= MIN_TIME_BETWEEN_CALLS) {
+        if (aiCallDebounceRef.current) {
+          clearTimeout(aiCallDebounceRef.current);
+        }
+        
+        aiCallDebounceRef.current = setTimeout(() => {
+          generateAIRecommendations();
+        }, 2000);
       }
     }
-  }, []); // Empty dependency array - only run once on mount
+  }, [trainingData, athlete, aiRecommendationsEnabled]);
 
-  // Fetch Strava activities
-  const fetchActivities = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const fetchedActivities = await stravaService.getActivities();
-
-      if (!fetchedActivities || !Array.isArray(fetchedActivities)) {
-        console.log('No activities returned from Strava');
-        setActivities([]);
-        setTrainingData(null);
-        return;
+  // Save settings to Firebase when they change
+  useEffect(() => {
+    const saveSettingsToFirebase = async () => {
+      if (firebaseUser && userSettings) {
+        try {
+          await updateDoc(doc(db, 'users', firebaseUser.uid), {
+            settings: userSettings,
+            updatedAt: new Date().toISOString()
+          });
+        } catch (err) {
+          console.error('Error saving settings to Firebase:', err);
+        }
       }
-
-      setActivities(fetchedActivities);
-
-      // Process activities for training data
-      const processed = processStravaActivities(fetchedActivities);
-      const weeklyStats = calculateWeeklyTSS(processed);
-      const phase = analyzeTrainingPhase(processed);
-
-      setTrainingData({
-        activities: processed,
-        weeklyStats,
-        phase,
-        lastUpdated: new Date().toISOString()
-      });
-
-    } catch (err) {
-      setError('Failed to fetch activities');
-      console.error('Fetch error:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Event management
-  const addEvent = (event) => {
-    const newEvent = {
-      ...event,
-      id: Date.now().toString(),
-      createdAt: new Date().toISOString()
     };
-    setUpcomingEvents([...upcomingEvents, newEvent]);
+
+    // Save locally always
+    localStorage.setItem('trainfuelSettings', JSON.stringify(userSettings));
+    
+    // Save to Firebase if user is logged in
+    if (firebaseUser) {
+      saveSettingsToFirebase();
+    }
+  }, [userSettings, firebaseUser]);
+
+  // Process activities data
+  const processActivitiesData = (activitiesData) => {
+    const processed = processStravaActivities(activitiesData);
+    const weeklyTSS = calculateWeeklyTSS(processed);
+    const phase = analyzeTrainingPhase(processed, upcomingEvents);
+    
+    setTrainingData({
+      processedActivities: processed,
+      weeklyTSS,
+      trainingPhase: phase,
+      recentActivities: activitiesData.slice(0, 10)
+    });
   };
 
-  const deleteEvent = (eventId) => {
-    setUpcomingEvents(upcomingEvents.filter(e => e.id !== eventId));
+  // Fetch activities from Strava
+  const fetchActivities = async () => {
+    if (!isAuthenticated) return;
+
+    setSyncStatus({ syncing: true, lastSync: syncStatus.lastSync });
+    
+    try {
+      const activitiesData = await stravaService.getActivities();
+      setActivities(activitiesData);
+      processActivitiesData(activitiesData);
+      
+      const now = new Date().toISOString();
+      setSyncStatus({ syncing: false, lastSync: now });
+      
+      // Cache activities in Firebase if user is logged in
+      if (firebaseUser) {
+        await updateDoc(doc(db, 'users', firebaseUser.uid), {
+          cachedActivities: activitiesData,
+          lastActivitySync: now
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching activities:', err);
+      setError('Failed to fetch activities from Strava');
+      setSyncStatus({ syncing: false, lastSync: syncStatus.lastSync });
+      
+      // Try to refresh token using Firebase function if available
+      if (firebaseUser) {
+        await refreshStravaTokenViaFirebase();
+      }
+    }
+  };
+
+  // Refresh Strava token using Firebase Function
+  const refreshStravaTokenViaFirebase = async () => {
+    try {
+      const refreshToken = localStorage.getItem('strava_refresh_token');
+      if (!refreshToken) return false;
+
+      const refreshStravaToken = httpsCallable(functions, 'refreshStravaToken');
+      const result = await refreshStravaToken({ refreshToken });
+      
+      if (result.data.success) {
+        localStorage.setItem('strava_access_token', result.data.tokens.access_token);
+        localStorage.setItem('strava_refresh_token', result.data.tokens.refresh_token);
+        localStorage.setItem('strava_token_expiry', (result.data.tokens.expires_at * 1000).toString());
+        return true;
+      }
+    } catch (err) {
+      console.error('Error refreshing token via Firebase:', err);
+    }
+    return false;
+  };
+
+  // Generate AI recommendations using Firebase Function
+  const generateAIRecommendations = async () => {
+    if (!firebaseUser) {
+      // Fallback to local proxy for non-Firebase users
+      await generateLocalAIRecommendations();
+      return;
+    }
+
+    try {
+      lastAICallRef.current = Date.now();
+      
+      const callClaude = httpsCallable(functions, 'callClaudeAPI');
+      const result = await callClaude({
+        prompt: buildNutritionPrompt(),
+        type: 'nutrition'
+      });
+      
+      if (result.data.success) {
+        const nutritionPlan = parseAIResponse(result.data.response);
+        setNutritionPlans([nutritionPlan, ...nutritionPlans.slice(0, 4)]);
+        
+        // Save to Firebase
+        await setDoc(doc(db, 'nutritionPlans', `${firebaseUser.uid}_${Date.now()}`), {
+          userId: firebaseUser.uid,
+          plan: nutritionPlan,
+          createdAt: new Date().toISOString()
+        });
+      }
+    } catch (err) {
+      console.error('Error generating AI recommendations:', err);
+    }
+  };
+
+  // Fallback to local AI generation (for testing without Firebase)
+  const generateLocalAIRecommendations = async () => {
+    try {
+      lastAICallRef.current = Date.now();
+      
+      const proxyUrl = process.env.REACT_APP_PROXY_URL || 'http://localhost:3001/api/claude';
+      const response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: buildNutritionPrompt() })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const nutritionPlan = parseAIResponse(data.response);
+        setNutritionPlans([nutritionPlan, ...nutritionPlans.slice(0, 4)]);
+      }
+    } catch (err) {
+      console.error('Error with local AI generation:', err);
+    }
+  };
+
+  // Build nutrition prompt for AI
+  const buildNutritionPrompt = () => {
+    return `Create a personalized nutrition plan for an athlete with the following profile:
+      - Fitness Level: ${userSettings.profile.fitnessLevel}
+      - Primary Goal: ${userSettings.goals.primaryGoal}
+      - Weekly Training Hours: ${userSettings.goals.weeklyTrainingHours}
+      - Recent Training Load: ${trainingData?.weeklyTSS || 'moderate'}
+      - Upcoming Events: ${upcomingEvents.length > 0 ? upcomingEvents[0].name : 'None scheduled'}
+      
+      Provide specific meal suggestions and timing recommendations following Nick Chase's nutrition methodology.
+      Return as JSON with structure: { dailyCalories, macros, meals, hydration, supplements }`;
+  };
+
+  // Parse AI response
+  const parseAIResponse = (response) => {
+    try {
+      return JSON.parse(response);
+    } catch {
+      return {
+        dailyCalories: 2500,
+        macros: { carbs: 50, protein: 25, fat: 25 },
+        meals: [],
+        hydration: "3-4 liters per day",
+        supplements: []
+      };
+    }
   };
 
   // Handle Strava connection
@@ -345,36 +389,107 @@ const App = () => {
     window.location.href = authUrl;
   };
 
-  // Handle refresh with rate limiting
-  const handleRefresh = async () => {
-    await fetchActivities();
-    if (aiRecommendationsEnabled) {
-      await generateAIRecommendations(true); // Force = true to bypass rate limit check
-    }
-  };
-
-  // Handle settings save without triggering AI
-  const handleSettingsSave = useCallback((newSettings) => {
-    setUserSettings(newSettings);
-    // DON'T automatically trigger AI regeneration
-    console.log('Settings saved. Click refresh to update AI recommendations.');
-  }, []);
-
-  // Toggle AI recommendations with rate limiting
-  const toggleAIRecommendations = () => {
-    const newState = !aiRecommendationsEnabled;
-    setAiRecommendationsEnabled(newState);
-    if (newState) {
-      // Only generate if we haven't called recently
-      const timeSinceLastCall = Date.now() - lastAICallRef.current;
-      if (timeSinceLastCall > MIN_TIME_BETWEEN_CALLS) {
-        generateAIRecommendations(true);
-      } else {
-        console.log('AI enabled but waiting for rate limit cooldown');
+  // Handle logout
+  const handleLogout = async () => {
+    stravaService.clearTokens();
+    
+    // Sign out from Firebase if logged in
+    if (firebaseUser) {
+      try {
+        await auth.signOut();
+      } catch (err) {
+        console.error('Error signing out from Firebase:', err);
       }
     }
+    
+    setIsAuthenticated(false);
+    setAthlete(null);
+    setActivities([]);
+    setTrainingData(null);
+    localStorage.clear();
   };
 
+  // Update settings
+  const updateSettings = (newSettings) => {
+    setUserSettings(newSettings);
+  };
+
+  // Add event
+  const handleAddEvent = (event) => {
+    const newEvents = [...upcomingEvents, { ...event, id: Date.now() }];
+    setUpcomingEvents(newEvents);
+    saveEventsToStorage(newEvents);
+    
+    // Save to Firebase if user is logged in
+    if (firebaseUser) {
+      updateDoc(doc(db, 'users', firebaseUser.uid), {
+        events: newEvents
+      });
+    }
+  };
+
+  // Delete event
+  const handleDeleteEvent = (eventId) => {
+    const newEvents = upcomingEvents.filter(e => e.id !== eventId);
+    setUpcomingEvents(newEvents);
+    saveEventsToStorage(newEvents);
+    
+    // Update Firebase if user is logged in
+    if (firebaseUser) {
+      updateDoc(doc(db, 'users', firebaseUser.uid), {
+        events: newEvents
+      });
+    }
+  };
+
+  // Update food log
+  const updateFoodLog = (newLog) => {
+    setFoodLog(newLog);
+    localStorage.setItem('trainfuel_food_log', JSON.stringify(newLog));
+    
+    // Save to Firebase if user is logged in
+    if (firebaseUser) {
+      updateDoc(doc(db, 'users', firebaseUser.uid), {
+        foodLog: newLog,
+        lastFoodLogUpdate: new Date().toISOString()
+      });
+    }
+  };
+
+  // Export data
+  const exportData = () => {
+    const dataToExport = {
+      athlete,
+      activities: activities.slice(0, 50),
+      trainingData,
+      upcomingEvents,
+      userSettings,
+      foodLog,
+      nutritionPlans,
+      exportDate: new Date().toISOString()
+    };
+
+    const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `trainfuel-data-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+  };
+
+  // Show loading state while Firebase is initializing
+  if (firebaseLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="h-8 w-8 animate-spin text-orange-500 mx-auto mb-4" />
+          <p className="text-gray-600">Loading TrainFuel...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Render main app
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gray-50">
@@ -382,169 +497,202 @@ const App = () => {
         <header className="bg-white shadow-sm border-b">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16">
-              <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-3">
+                <Activity className="h-8 w-8 text-orange-500" />
                 <h1 className="text-2xl font-bold text-gray-900">TrainFuel</h1>
-                {athlete && (
-                  <span className="text-sm text-gray-600">
-                    Welcome, {athlete.firstname}!
+                {firebaseUser && (
+                  <span className="text-sm text-gray-500 ml-4">
+                    Firebase Connected
                   </span>
                 )}
               </div>
 
-              <div className="flex items-center space-x-4">
-                {/* AI Toggle */}
-                <button
-                  onClick={toggleAIRecommendations}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors ${aiRecommendationsEnabled
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-gray-100 text-gray-700'
-                    }`}
-                >
-                  <Brain className="w-4 h-4" />
-                  <span className="text-sm">AI {aiRecommendationsEnabled ? 'ON' : 'OFF'}</span>
-                </button>
+              {isAuthenticated && (
+                <div className="flex items-center space-x-4">
+                  {/* Sync Status */}
+                  <div className="flex items-center space-x-2">
+                    {syncStatus.syncing ? (
+                      <RefreshCw className="h-4 w-4 animate-spin text-orange-500" />
+                    ) : (
+                      <button
+                        onClick={fetchActivities}
+                        className="text-gray-600 hover:text-orange-500 transition-colors"
+                        title="Sync Activities"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </button>
+                    )}
+                    {syncStatus.lastSync && (
+                      <span className="text-xs text-gray-500">
+                        Last sync: {new Date(syncStatus.lastSync).toLocaleTimeString()}
+                      </span>
+                    )}
+                  </div>
 
-                {/* Refresh Button */}
-                {isAuthenticated && (
+                  {/* Export Button */}
                   <button
-                    onClick={handleRefresh}
-                    disabled={loading}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    onClick={exportData}
+                    className="text-gray-600 hover:text-orange-500 transition-colors"
+                    title="Export Data"
                   >
-                    <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                    <Download className="h-4 w-4" />
                   </button>
-                )}
-              </div>
+
+                  {/* User Info */}
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm font-medium text-gray-700">
+                      {athlete?.firstname} {athlete?.lastname}
+                    </span>
+                    <button
+                      onClick={handleLogout}
+                      className="text-sm text-gray-500 hover:text-gray-700"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </header>
 
-        {/* Navigation Tabs */}
+        {/* Navigation */}
         {isAuthenticated && (
-          <div className="bg-white border-b">
+          <nav className="bg-white border-b">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-              <nav className="flex space-x-8">
+              <div className="flex space-x-8">
                 <button
-                  onClick={() => setActiveTab('dashboard')}
-                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'dashboard'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
+                  onClick={() => setActiveView('dashboard')}
+                  className={`py-2 px-3 border-b-2 ${
+                    activeView === 'dashboard'
+                      ? 'border-orange-500 text-orange-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  } transition-colors flex items-center space-x-2`}
                 >
-                  <Home className="w-4 h-4 inline mr-2" />
-                  Dashboard
+                  <Home className="h-4 w-4" />
+                  <span>Dashboard</span>
                 </button>
                 <button
-                  onClick={() => setActiveTab('workout')}
-                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'workout'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
+                  onClick={() => setActiveView('workouts')}
+                  className={`py-2 px-3 border-b-2 ${
+                    activeView === 'workouts'
+                      ? 'border-orange-500 text-orange-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  } transition-colors flex items-center space-x-2`}
                 >
-                  <Activity className="w-4 h-4 inline mr-2" />
-                  Today's Workout
+                  <Zap className="h-4 w-4" />
+                  <span>Workouts</span>
                 </button>
                 <button
-                  onClick={() => setActiveTab('nutrition')}
-                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'nutrition'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
+                  onClick={() => setActiveView('nutrition')}
+                  className={`py-2 px-3 border-b-2 ${
+                    activeView === 'nutrition'
+                      ? 'border-orange-500 text-orange-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  } transition-colors flex items-center space-x-2`}
                 >
-                  <Utensils className="w-4 h-4 inline mr-2" />
-                  Nutrition
+                  <Utensils className="h-4 w-4" />
+                  <span>Nutrition</span>
                 </button>
                 <button
-                  onClick={() => setActiveTab('calendar')}
-                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'calendar'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
+                  onClick={() => setActiveView('calendar')}
+                  className={`py-2 px-3 border-b-2 ${
+                    activeView === 'calendar'
+                      ? 'border-orange-500 text-orange-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  } transition-colors flex items-center space-x-2`}
                 >
-                  <Calendar className="w-4 h-4 inline mr-2" />
-                  Calendar
+                  <Calendar className="h-4 w-4" />
+                  <span>Calendar</span>
                 </button>
                 <button
-                  onClick={() => setActiveTab('settings')}
-                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'settings'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
+                  onClick={() => setActiveView('settings')}
+                  className={`py-2 px-3 border-b-2 ${
+                    activeView === 'settings'
+                      ? 'border-orange-500 text-orange-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  } transition-colors flex items-center space-x-2`}
                 >
-                  <Settings className="w-4 h-4 inline mr-2" />
-                  Settings
+                  <Settings className="h-4 w-4" />
+                  <span>Settings</span>
                 </button>
-              </nav>
+              </div>
             </div>
-          </div>
+          </nav>
         )}
 
         {/* Main Content */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {error && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-red-600" />
-              <span className="text-red-700">{error}</span>
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 flex items-center">
+              <AlertCircle className="h-5 w-5 mr-2" />
+              <span>{error}</span>
             </div>
           )}
 
           {!isAuthenticated ? (
-            <StravaAuth onConnect={handleStravaConnect} />
+            <StravaAuth onConnect={handleStravaConnect} loading={loading} error={error} />
           ) : (
             <>
-              {activeTab === 'dashboard' && (
+              {activeView === 'dashboard' && (
                 <DashboardView
                   athlete={athlete}
                   activities={activities}
                   trainingData={trainingData}
-                  nutritionPlan={dailyNutrition}
                   upcomingEvents={upcomingEvents}
-                  loading={loading}
+                  nutritionPlans={nutritionPlans}
                 />
               )}
 
-              {activeTab === 'workout' && (
+              {activeView === 'workouts' && (
                 <WorkoutGenerator
-                  stravaData={trainingData}
+                  stravaData={{
+                    activities,
+                    weeklyStats: trainingData?.weeklyTSS,
+                    trainingPhase: trainingData?.trainingPhase
+                  }}
+                  userSettings={userSettings}
                   upcomingEvents={upcomingEvents}
-                  isInSeason={userSettings.goals.currentPhase === 'in_season'}
+                  aiEnabled={aiRecommendationsEnabled && !!firebaseUser}
                 />
               )}
 
-              {activeTab === 'nutrition' && (
+              {activeView === 'nutrition' && (
                 <EnhancedNutritionTracker
                   trainingData={trainingData}
-                  foodLog={foodLogHistory}
-                  userPreferences={userSettings.foodPreferences}
+                  foodLog={foodLog}
+                  userPreferences={userSettings}
                   currentWeight={userSettings.profile.weight}
-                  onFoodLogUpdate={handleFoodLogUpdate}
+                  onFoodLogUpdate={updateFoodLog}
                 />
               )}
 
-              {activeTab === 'calendar' && (
+              {activeView === 'calendar' && (
                 <CalendarView
                   activities={activities}
                   upcomingEvents={upcomingEvents}
-                  onAddEvent={() => setShowAddEventModal(true)}
-                  onDeleteEvent={deleteEvent}
+                  onAddEvent={handleAddEvent}
+                  onDeleteEvent={handleDeleteEvent}
                 />
               )}
 
-              {activeTab === 'settings' && (
-                <SettingsPage onSave={handleSettingsSave} />
+              {activeView === 'settings' && (
+                <SettingsPage
+                  settings={userSettings}
+                  onUpdateSettings={updateSettings}
+                  aiEnabled={aiRecommendationsEnabled}
+                  onToggleAI={() => setAiRecommendationsEnabled(!aiRecommendationsEnabled)}
+                />
               )}
             </>
           )}
         </main>
 
-        {/* Modals */}
-        {showAddEventModal && (
+        {/* Add Event Modal */}
+        {isModalOpen && (
           <AddEventModal
-            onClose={() => setShowAddEventModal(false)}
-            onSave={(event) => {
-              addEvent(event);
-              setShowAddEventModal(false);
-            }}
+            onClose={() => setIsModalOpen(false)}
+            onSave={handleAddEvent}
           />
         )}
       </div>
