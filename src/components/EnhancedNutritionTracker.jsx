@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Utensils, Clock, Flame, Target, Info, ChefHat, Plus, Search, X, Check, TrendingUp, Calendar, Camera, Loader } from 'lucide-react';
 import edamamService from '../services/edamamService';
+import TrafficLightIndicator from './TrafficLightIndicator';
 
 const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeight, onFoodLogUpdate }) => {
   const [mealPlan, setMealPlan] = useState(null);
@@ -12,7 +13,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
   const [selectedPortion, setSelectedPortion] = useState({});
   const searchDebounceRef = useRef(null);
   const isInitialMount = useRef(true);
-  
+
   // Food logging state
   const [todaysFoodLog, setTodaysFoodLog] = useState(() => {
     const saved = localStorage.getItem('trainfuel_today_food_log');
@@ -32,7 +33,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
       water: 0
     };
   });
-  
+
   const [showAddFood, setShowAddFood] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [naturalLanguageInput, setNaturalLanguageInput] = useState('');
@@ -53,9 +54,9 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
       isInitialMount.current = false;
       return;
     }
-    
+
     localStorage.setItem('trainfuel_today_food_log', JSON.stringify(todaysFoodLog));
-    
+
     // Only call parent update if provided
     if (onFoodLogUpdate) {
       onFoodLogUpdate(todaysFoodLog);
@@ -68,7 +69,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
       if (searchDebounceRef.current) {
         clearTimeout(searchDebounceRef.current);
       }
-      
+
       searchDebounceRef.current = setTimeout(async () => {
         setSearchLoading(true);
         const results = await edamamService.searchFood(searchQuery);
@@ -78,7 +79,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
     } else {
       setEdamamResults([]);
     }
-    
+
     return () => {
       if (searchDebounceRef.current) {
         clearTimeout(searchDebounceRef.current);
@@ -94,7 +95,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
       ...todaysFoodLog.dinner,
       ...todaysFoodLog.snacks
     ];
-    
+
     return allFoods.reduce((totals, food) => ({
       calories: totals.calories + (food.calories || 0),
       protein: totals.protein + (food.protein || 0),
@@ -109,8 +110,11 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
   // Calculate remaining macros
   const calculateRemainingMacros = () => {
     const consumed = calculateConsumedMacros();
-    const target = mealPlan?.macros || { calories: 2000, protein: 150, carbs: 200, fat: 70 };
-    
+    // Use actual calculated nutrition from training data
+    const target = trainingData?.todaysNutrition ||
+      mealPlan?.macros ||
+      { calories: 2000, protein: 150, carbs: 200, fat: 70 };
+
     return {
       calories: Math.max(0, (target.calories || 2000) - consumed.calories),
       protein: Math.max(0, (target.protein || 150) - consumed.protein),
@@ -123,13 +127,13 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
   const addEdamamFood = async (food, mealType) => {
     // Get the selected portion size
     const portion = selectedPortion[food.id] || { value: 100, uri: null };
-    
+
     // Get detailed nutrition for the selected portion
     const nutrition = await edamamService.getNutrition(food.id, portion.value, portion.uri);
-    
+
     const foodWithTimestamp = {
       id: Date.now(),
-      name: `${food.name} (${portion.label || portion.value + 'g'})`,
+      name: `${food.name} (${portion.displayLabel || portion.label || '3.5 oz'})`,
       brand: food.brand,
       calories: nutrition?.calories || food.calories,
       protein: nutrition?.protein || food.protein,
@@ -141,12 +145,12 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
       timestamp: new Date().toISOString(),
       source: 'edamam'
     };
-    
+
     setTodaysFoodLog(prev => ({
       ...prev,
       [mealType]: [...prev[mealType], foodWithTimestamp]
     }));
-    
+
     setShowAddFood(false);
     setSearchQuery('');
     setEdamamResults([]);
@@ -155,10 +159,10 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
   // Parse natural language input
   const parseNaturalLanguage = async () => {
     if (!naturalLanguageInput) return;
-    
+
     setSearchLoading(true);
     const result = await edamamService.parseNaturalLanguage(naturalLanguageInput);
-    
+
     if (result) {
       const foodWithTimestamp = {
         id: Date.now(),
@@ -167,25 +171,25 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
         timestamp: new Date().toISOString(),
         source: 'natural'
       };
-      
+
       setTodaysFoodLog(prev => ({
         ...prev,
         [selectedMealType]: [...prev[selectedMealType], foodWithTimestamp]
       }));
-      
+
       setNaturalLanguageInput('');
       setShowAddFood(false);
     } else {
       alert('Could not parse that food description. Try being more specific, e.g., "2 cups cooked brown rice"');
     }
-    
+
     setSearchLoading(false);
   };
 
   // Analyze recipe
   const analyzeRecipe = async () => {
     if (!recipeInput.title || !recipeInput.ingredients) return;
-    
+
     setSearchLoading(true);
     const ingredients = recipeInput.ingredients.split('\n').filter(i => i.trim());
     const result = await edamamService.analyzeRecipe(
@@ -193,7 +197,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
       ingredients,
       recipeInput.servings
     );
-    
+
     if (result) {
       const foodWithTimestamp = {
         id: Date.now(),
@@ -205,18 +209,18 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
         timestamp: new Date().toISOString(),
         source: 'recipe'
       };
-      
+
       setTodaysFoodLog(prev => ({
         ...prev,
         [selectedMealType]: [...prev[selectedMealType], foodWithTimestamp]
       }));
-      
+
       setRecipeInput({ title: '', ingredients: '', servings: 1 });
       setShowAddFood(false);
     } else {
       alert('Could not analyze this recipe. Please check the format.');
     }
-    
+
     setSearchLoading(false);
   };
 
@@ -232,14 +236,14 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
   const generateSmartSuggestions = () => {
     const remaining = calculateRemainingMacros();
     const suggestions = [];
-    
+
     // Determine what meal time it is
     const hour = new Date().getHours();
     let nextMeal = 'snacks';
     if (hour < 10) nextMeal = 'breakfast';
     else if (hour < 14) nextMeal = 'lunch';
     else if (hour < 20) nextMeal = 'dinner';
-    
+
     // High protein, moderate carb suggestions if protein is low
     if (remaining.protein > 30) {
       suggestions.push({
@@ -253,7 +257,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
         fat: 12
       });
     }
-    
+
     // Balanced meal if all macros are moderate
     if (remaining.calories > 400 && remaining.protein > 20 && remaining.carbs > 30) {
       suggestions.push({
@@ -267,7 +271,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
         fat: 14
       });
     }
-    
+
     // Quick carb-focused meal for pre/post workout
     if (remaining.carbs > 40) {
       suggestions.push({
@@ -281,7 +285,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
         fat: 8
       });
     }
-    
+
     // Light snack option if calories are low
     if (remaining.calories < 300) {
       suggestions.push({
@@ -295,7 +299,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
         fat: 4
       });
     }
-    
+
     // If very high calories remaining, suggest a full meal
     if (remaining.calories > 600) {
       suggestions.push({
@@ -309,7 +313,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
         fat: 22
       });
     }
-    
+
     // Always include a Nick Chase-style liquid option
     suggestions.push({
       name: "Recovery Smoothie",
@@ -321,7 +325,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
       carbs: 35,
       fat: 10
     });
-    
+
     // Return top 3 suggestions
     return suggestions.slice(0, 3);
   };
@@ -357,6 +361,13 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
 
   return (
     <div className="space-y-6">
+      {/* Traffic Light Indicator - NEW */}
+      {trainingData && (
+        <TrafficLightIndicator
+          trainingData={trainingData}
+          size="large"
+        />
+      )}
       {/* Daily Progress Overview - Same as before */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex items-center justify-between mb-4">
@@ -378,11 +389,10 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
             </span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-3">
-            <div 
-              className={`h-3 rounded-full transition-all ${
-                percentageConsumed > 100 ? 'bg-red-500' : 
+            <div
+              className={`h-3 rounded-full transition-all ${percentageConsumed > 100 ? 'bg-red-500' :
                 percentageConsumed > 80 ? 'bg-yellow-500' : 'bg-green-500'
-              }`}
+                }`}
               style={{ width: `${Math.min(100, percentageConsumed)}%` }}
             />
           </div>
@@ -396,7 +406,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
               <span className="text-xs text-gray-500">{consumed.protein}g / {mealPlan?.macros.protein || 150}g</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
+              <div
                 className="h-2 rounded-full bg-blue-500"
                 style={{ width: `${Math.min(100, (consumed.protein / (mealPlan?.macros.protein || 150)) * 100)}%` }}
               />
@@ -408,7 +418,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
               <span className="text-xs text-gray-500">{consumed.carbs}g / {mealPlan?.macros.carbs || 200}g</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
+              <div
                 className="h-2 rounded-full bg-green-500"
                 style={{ width: `${Math.min(100, (consumed.carbs / (mealPlan?.macros.carbs || 200)) * 100)}%` }}
               />
@@ -420,7 +430,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
               <span className="text-xs text-gray-500">{consumed.fat}g / {mealPlan?.macros.fat || 70}g</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
+              <div
                 className="h-2 rounded-full bg-yellow-500"
                 style={{ width: `${Math.min(100, (consumed.fat / (mealPlan?.macros.fat || 70)) * 100)}%` }}
               />
@@ -501,7 +511,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
                 + Add
               </button>
             </div>
-            
+
             {todaysFoodLog[mealType].length > 0 ? (
               <div className="space-y-2">
                 {todaysFoodLog[mealType].map(food => (
@@ -528,7 +538,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
             ) : (
               <p className="text-sm text-gray-400">No foods logged</p>
             )}
-            
+
             {/* Meal subtotals */}
             {todaysFoodLog[mealType].length > 0 && (
               <div className="mt-2 pt-2 border-t text-xs text-gray-600">
@@ -562,31 +572,28 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
               <div className="flex gap-2 mb-4 border-b">
                 <button
                   onClick={() => setActiveTab('search')}
-                  className={`px-4 py-2 font-medium transition-colors ${
-                    activeTab === 'search' 
-                      ? 'text-blue-600 border-b-2 border-blue-600' 
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
+                  className={`px-4 py-2 font-medium transition-colors ${activeTab === 'search'
+                    ? 'text-blue-600 border-b-2 border-blue-600'
+                    : 'text-gray-600 hover:text-gray-900'
+                    }`}
                 >
                   Search Foods
                 </button>
                 <button
                   onClick={() => setActiveTab('natural')}
-                  className={`px-4 py-2 font-medium transition-colors ${
-                    activeTab === 'natural' 
-                      ? 'text-blue-600 border-b-2 border-blue-600' 
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
+                  className={`px-4 py-2 font-medium transition-colors ${activeTab === 'natural'
+                    ? 'text-blue-600 border-b-2 border-blue-600'
+                    : 'text-gray-600 hover:text-gray-900'
+                    }`}
                 >
                   Natural Language
                 </button>
                 <button
                   onClick={() => setActiveTab('recipe')}
-                  className={`px-4 py-2 font-medium transition-colors ${
-                    activeTab === 'recipe' 
-                      ? 'text-blue-600 border-b-2 border-blue-600' 
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
+                  className={`px-4 py-2 font-medium transition-colors ${activeTab === 'recipe'
+                    ? 'text-blue-600 border-b-2 border-blue-600'
+                    : 'text-gray-600 hover:text-gray-900'
+                    }`}
                 >
                   Recipe Analyzer
                 </button>
@@ -624,7 +631,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
                                 <p className="text-xs text-gray-500 mt-1">
                                   Per 100g: {food.calories} cal • P: {food.protein}g • C: {food.carbs}g • F: {food.fat}g
                                 </p>
-                                
+
                                 {/* Portion size selector */}
                                 {food.measures && food.measures.length > 0 && (
                                   <div className="mt-2 flex items-center gap-2">
@@ -632,22 +639,28 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
                                     <select
                                       className="text-xs px-2 py-1 border rounded"
                                       onChange={(e) => {
-                                        const measure = food.measures.find(m => m.uri === e.target.value) || 
-                                                       { label: '100g', weight: 100, uri: null };
+                                        const measure = food.measures.find(m => m.uri === e.target.value) ||
+                                        {
+                                          label: '3.5 oz (100g)',
+                                          displayLabel: '3.5 oz',
+                                          weight: 100,
+                                          uri: null
+                                        };
                                         setSelectedPortion({
                                           ...selectedPortion,
-                                          [food.id]: { 
-                                            value: measure.weight, 
+                                          [food.id]: {
+                                            value: measure.value, // Keep in grams for API
                                             uri: measure.uri,
-                                            label: measure.label 
+                                            label: measure.label, // Full label with weight
+                                            displayLabel: measure.displayLabel // Just the measure name
                                           }
                                         });
                                       }}
                                     >
-                                      <option value="">100g</option>
+                                      <option value="">3.5 oz (100g)</option>
                                       {food.measures.map((measure, idx) => (
                                         <option key={idx} value={measure.uri}>
-                                          {measure.label} ({Math.round(measure.weight)}g)
+                                          {measure.label}
                                         </option>
                                       ))}
                                     </select>
@@ -717,13 +730,13 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
                     type="text"
                     placeholder="Recipe name"
                     value={recipeInput.title}
-                    onChange={(e) => setRecipeInput({...recipeInput, title: e.target.value})}
+                    onChange={(e) => setRecipeInput({ ...recipeInput, title: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 mb-3"
                   />
                   <textarea
                     placeholder="Enter ingredients (one per line)&#10;e.g.:&#10;2 cups brown rice&#10;1 lb chicken breast&#10;1 tbsp olive oil"
                     value={recipeInput.ingredients}
-                    onChange={(e) => setRecipeInput({...recipeInput, ingredients: e.target.value})}
+                    onChange={(e) => setRecipeInput({ ...recipeInput, ingredients: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 h-32 mb-3"
                   />
                   <div className="flex items-center gap-3 mb-3">
@@ -732,7 +745,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
                       type="number"
                       min="1"
                       value={recipeInput.servings}
-                      onChange={(e) => setRecipeInput({...recipeInput, servings: parseInt(e.target.value) || 1})}
+                      onChange={(e) => setRecipeInput({ ...recipeInput, servings: parseInt(e.target.value) || 1 })}
                       className="w-20 px-3 py-1 border rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -792,7 +805,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
         <p className="text-sm text-gray-600 mb-4">
           Based on your remaining macros and training schedule, here are personalized meal ideas:
         </p>
-        
+
         {/* Display suggestions based on remaining macros */}
         <div className="grid gap-4">
           {generateSmartSuggestions().map((suggestion, index) => (
@@ -803,9 +816,9 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
                   {suggestion.meal}
                 </span>
               </div>
-              
+
               <p className="text-sm text-gray-600 mb-3">{suggestion.description}</p>
-              
+
               <div className="mb-3">
                 <p className="text-sm text-gray-600 font-medium mb-1">Quick Recipe:</p>
                 <p className="text-sm text-gray-700">{suggestion.instructions}</p>
@@ -828,7 +841,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
             </div>
           ))}
         </div>
-        
+
         {/* Quick add buttons for suggestions */}
         <div className="mt-4 p-4 bg-blue-50 rounded-lg">
           <p className="text-sm text-blue-900 mb-2">

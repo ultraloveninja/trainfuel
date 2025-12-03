@@ -1,144 +1,336 @@
-// Convert Strava activities to our training data format
-export const processStravaActivities = (activities) => {
-  const processedActivities = activities.map(activity => ({
-    id: activity.id,
-    date: activity.start_date.split('T')[0],
-    type: mapActivityType(activity.type, activity.name),
-    duration: Math.round(activity.moving_time / 60), // Convert to minutes
-    intensity: calculateIntensity(activity),
-    distance: activity.distance,
-    elevationGain: activity.total_elevation_gain,
-    averageHeartRate: activity.average_heartrate,
-    maxHeartRate: activity.max_heartrate,
-    averagePower: activity.average_watts,
-    maxPower: activity.max_watts,
-    tss: calculateTSS(activity),
-    calories: activity.calories || estimateCalories(activity)
-  }));
+// src/utils/trainingUtils.js
+// Enhanced training utilities that calculate adaptive nutrition based on workout data
+// This creates the "traffic light" system like Fuelin
 
-  return processedActivities;
-};
+import workoutAnalyzer from '../services/workoutAnalyzer';
 
-// Map Strava activity types to our categories
-const mapActivityType = (stravaType, name) => {
-  const typeMapping = {
-    'Ride': 'Cycling',
-    'VirtualRide': 'Indoor Cycling',
-    'Run': 'Running',
-    'Swim': 'Swimming',
-    'WeightTraining': 'Strength Training',
-    'Yoga': 'Recovery',
-    'Walk': 'Recovery Walk'
-  };
-
-  // Check for specific workout types in the name
-  if (name.toLowerCase().includes('interval')) return 'Interval Training';
-  if (name.toLowerCase().includes('recovery')) return 'Recovery Ride';
-  if (name.toLowerCase().includes('tempo')) return 'Tempo';
-  if (name.toLowerCase().includes('endurance')) return 'Endurance';
-
-  return typeMapping[stravaType] || stravaType;
-};
-
-// Calculate training intensity based on heart rate zones
-const calculateIntensity = (activity) => {
-  if (!activity.average_heartrate) return 'Unknown';
-  
-  // These should be personalized based on user's HR zones
-  const maxHR = 190; // Should come from user profile
-  const hrZones = {
-    zone1: maxHR * 0.6,
-    zone2: maxHR * 0.7,
-    zone3: maxHR * 0.8,
-    zone4: maxHR * 0.9
-  };
-
-  const avgHR = activity.average_heartrate;
-  
-  if (avgHR < hrZones.zone1) return 'Very Low';
-  if (avgHR < hrZones.zone2) return 'Low';
-  if (avgHR < hrZones.zone3) return 'Moderate';
-  if (avgHR < hrZones.zone4) return 'High';
-  return 'Very High';
-};
-
-// Calculate Training Stress Score (TSS)
-const calculateTSS = (activity) => {
-  // Simplified TSS calculation
-  // Real TSS requires FTP (Functional Threshold Power)
-  const duration = activity.moving_time / 3600; // hours
-  const avgPower = activity.average_watts;
-  const ftp = 250; // Should come from user profile
-
-  if (avgPower && ftp) {
-    const intensity = avgPower / ftp;
-    return Math.round(duration * intensity * intensity * 100);
+/**
+ * Process Strava activities and calculate nutrition needs
+ * This is the main function that drives adaptive nutrition
+ */
+export const processStravaActivities = (activities, userSettings = {}) => {
+  if (!activities || activities.length === 0) {
+    return {
+      recent: [],
+      today: [],
+      weeklyTSS: 0,
+      weeklyDuration: 0,
+      trainingPhase: 'rest',
+      todaysNutrition: getRestDayNutrition(userSettings),
+      trafficLight: 'red'
+    };
   }
 
-  // Fallback: estimate based on heart rate and duration
-  const intensityFactor = calculateIntensityFactor(activity);
-  return Math.round(duration * intensityFactor * 100);
-};
+  // Analyze each activity
+  const analyzedActivities = activities.map(activity => ({
+    ...activity,
+    analysis: workoutAnalyzer.analyzeActivity(activity)
+  }));
 
-const calculateIntensityFactor = (activity) => {
-  const intensity = calculateIntensity(activity);
-  const factors = {
-    'Very Low': 0.3,
-    'Low': 0.5,
-    'Moderate': 0.7,
-    'High': 0.85,
-    'Very High': 1.0
-  };
-  return factors[intensity] || 0.6;
-};
-
-// Estimate calories if not provided
-const estimateCalories = (activity) => {
-  const duration = activity.moving_time / 3600; // hours
-  const type = activity.type;
-  
-  // Rough estimates per hour by activity type
-  const caloriesPerHour = {
-    'Ride': 600,
-    'VirtualRide': 650,
-    'Run': 700,
-    'Swim': 500,
-    'WeightTraining': 400
-  };
-
-  return Math.round(duration * (caloriesPerHour[type] || 500));
-};
-
-// Calculate weekly training load
-export const calculateWeeklyTSS = (activities) => {
-  const oneWeekAgo = new Date();
-  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-
-  const recentActivities = activities.filter(activity => 
-    new Date(activity.date) >= oneWeekAgo
+  // Get today's workouts
+  const today = new Date().toISOString().split('T')[0];
+  const todaysWorkouts = analyzedActivities.filter(a => 
+    a.start_date_local.startsWith(today)
   );
 
-  return recentActivities.reduce((total, activity) => total + activity.tss, 0);
+  // Calculate weekly training load
+  const weeklyAnalysis = workoutAnalyzer.analyzeWeeklyLoad(activities);
+
+  // Determine training phase based on weekly load
+  const trainingPhase = determineTrainingPhase(
+    weeklyAnalysis.weeklyTSS, 
+    weeklyAnalysis.weeklyDuration
+  );
+
+  // Calculate nutritional needs for today
+  const todaysNutrition = calculateDailyNutrition(
+    todaysWorkouts, 
+    trainingPhase,
+    userSettings
+  );
+
+  // Determine traffic light color (Fuelin-style)
+  const trafficLight = getTrafficLightColor(todaysNutrition.carbs);
+
+  return {
+    recent: analyzedActivities.slice(0, 30),
+    today: todaysWorkouts,
+    weeklyTSS: weeklyAnalysis.weeklyTSS,
+    weeklyDuration: weeklyAnalysis.weeklyDuration,
+    weeklyCalories: weeklyAnalysis.weeklyCalories,
+    workoutCount: weeklyAnalysis.workoutCount,
+    trainingPhase,
+    todaysNutrition,
+    trafficLight,
+    weeklyAnalysis
+  };
 };
 
-// Analyze training phase based on recent activities
-export const analyzeTrainingPhase = (activities) => {
-  const recentActivities = activities.slice(0, 10); // Last 10 activities
-  const avgIntensityScore = recentActivities.reduce((sum, activity) => {
-    const intensityScores = {
-      'Very Low': 1,
-      'Low': 2,
-      'Moderate': 3,
-      'High': 4,
-      'Very High': 5
+/**
+ * Calculate daily nutrition based on today's workouts
+ * Implements adaptive macro calculations like Fuelin
+ */
+function calculateDailyNutrition(todaysWorkouts, phase, userSettings = {}) {
+  // Get user's base metrics
+  const weight = userSettings?.weight || 204;
+  const goal = userSettings?.primaryGoal || 'weight_loss';
+  const age = userSettings?.age || 46;
+  const gender = userSettings?.gender || 'male';
+
+  // Calculate BMR (Mifflin-St Jeor equation)
+  const heightCm = 188; // 6'2" = 188cm
+  let bmr;
+  if (gender === 'male') {
+    bmr = 10 * (weight * 0.453592) + 6.25 * heightCm - 5 * age + 5;
+  } else {
+    bmr = 10 * (weight * 0.453592) + 6.25 * heightCm - 5 * age - 161;
+  }
+
+  // Base macros (rest day)
+  const baseMacros = {
+    protein: Math.round(weight * 0.8), // 0.8g per lb for endurance athletes
+    carbs: 150,
+    fat: 60
+  };
+
+  const baseCalories = bmr * 1.2; // Sedentary multiplier
+
+  if (todaysWorkouts.length === 0) {
+    // Rest day nutrition
+    const restCalories = goal === 'weight_loss' 
+      ? baseCalories - 300 
+      : baseCalories;
+
+    return {
+      calories: Math.round(restCalories),
+      protein: baseMacros.protein,
+      carbs: Math.round(baseMacros.carbs * 0.7), // Reduce carbs on rest day
+      fat: Math.round(baseMacros.fat * 1.1),
+      trainingLoad: 'rest',
+      workouts: [],
+      breakdown: {
+        base: Math.round(restCalories),
+        workout: 0
+      }
     };
-    return sum + (intensityScores[activity.intensity] || 3);
-  }, 0) / recentActivities.length;
+  }
 
-  const weeklyTSS = calculateWeeklyTSS(activities);
+  // Calculate workout demands
+  const totalTSS = todaysWorkouts.reduce((sum, w) => 
+    sum + (w.analysis?.tss || 0), 0
+  );
+  
+  const totalDuration = todaysWorkouts.reduce((sum, w) => 
+    sum + (w.analysis?.duration || 0), 0
+  );
+  
+  const totalCarbsNeeded = todaysWorkouts.reduce((sum, w) => 
+    sum + (w.analysis?.carbsDuringWorkout || 0) + 
+        (w.analysis?.recoveryCarbs || 0), 0
+  );
+  
+  const workoutCalories = todaysWorkouts.reduce((sum, w) => 
+    sum + (w.analysis?.caloriesBurned || 0), 0
+  );
 
-  if (weeklyTSS > 600 && avgIntensityScore > 3.5) return 'Peak';
-  if (weeklyTSS > 400 && avgIntensityScore > 3) return 'Build';
-  if (weeklyTSS > 200) return 'Base';
-  return 'Recovery';
+  // Calculate additional calories needed
+  // For weight loss: replace 50% of burned calories
+  // For maintenance: replace 70% of burned calories
+  // For gain: replace 100% of burned calories
+  const replacementRate = goal === 'weight_loss' ? 0.5 : 
+                          goal === 'weight_gain' ? 1.0 : 0.7;
+  
+  const additionalCalories = workoutCalories * replacementRate;
+
+  // Calculate total daily macros
+  const totalCalories = Math.round(baseCalories + additionalCalories);
+  
+  // Carbs: base + workout needs + recovery
+  const totalCarbs = Math.round(baseMacros.carbs + totalCarbsNeeded);
+  
+  // Protein: base + additional for recovery (10g per hour of training, max 30g)
+  const additionalProtein = Math.min(totalDuration * 10, 30);
+  const totalProtein = Math.round(baseMacros.protein + additionalProtein);
+  
+  // Fat: fill remaining calories after protein and carbs
+  const remainingCalories = totalCalories - (totalCarbs * 4) - (totalProtein * 4);
+  const totalFat = Math.max(Math.round(remainingCalories / 9), 50);
+
+  // Determine training load category
+  let trainingLoad = 'light';
+  if (totalTSS > 150) trainingLoad = 'high';
+  else if (totalTSS > 80) trainingLoad = 'moderate';
+
+  return {
+    calories: totalCalories,
+    protein: totalProtein,
+    carbs: totalCarbs,
+    fat: totalFat,
+    trainingLoad,
+    workouts: todaysWorkouts.map(w => ({
+      name: w.name,
+      type: w.type,
+      duration: w.analysis?.duration,
+      tss: w.analysis?.tss,
+      intensity: w.analysis?.intensity,
+      carbsNeeded: (w.analysis?.carbsDuringWorkout || 0) + 
+                   (w.analysis?.recoveryCarbs || 0)
+    })),
+    breakdown: {
+      base: Math.round(baseCalories),
+      workout: Math.round(additionalCalories),
+      totalBurned: Math.round(workoutCalories)
+    }
+  };
+}
+
+/**
+ * Get rest day nutrition
+ */
+function getRestDayNutrition(userSettings = {}) {
+  const weight = userSettings?.weight || 204;
+  const goal = userSettings?.primaryGoal || 'weight_loss';
+
+  const baseCalories = goal === 'weight_loss' ? 1800 : 2000;
+
+  return {
+    calories: baseCalories,
+    protein: Math.round(weight * 0.8),
+    carbs: 150,
+    fat: 65,
+    trainingLoad: 'rest',
+    workouts: [],
+    breakdown: {
+      base: baseCalories,
+      workout: 0
+    }
+  };
+}
+
+/**
+ * Determine training phase based on weekly load
+ */
+function determineTrainingPhase(weeklyTSS, weeklyDuration) {
+  if (weeklyTSS === 0) return 'rest';
+  if (weeklyTSS > 600) return 'peak'; // Peak training
+  if (weeklyTSS > 450) return 'build'; // Build phase
+  if (weeklyTSS > 300) return 'base'; // Base building
+  return 'recovery'; // Recovery/easy week
+}
+
+/**
+ * Get traffic light color based on carb needs
+ * 🔴 Red = Low carb day (rest/recovery)
+ * 🟡 Yellow = Moderate carb day (base training)
+ * 🟢 Green = High carb day (hard training)
+ */
+function getTrafficLightColor(carbs) {
+  if (carbs >= 250) return 'green'; // High carb day (hard training)
+  if (carbs >= 180) return 'yellow'; // Moderate carb day (moderate training)
+  return 'red'; // Low carb day (rest/easy)
+}
+
+/**
+ * Calculate weekly TSS (Training Stress Score)
+ * Legacy function for backward compatibility
+ */
+export const calculateWeeklyTSS = (activities) => {
+  if (!activities || activities.length === 0) return 0;
+  
+  const analysis = workoutAnalyzer.analyzeWeeklyLoad(activities);
+  return analysis.weeklyTSS;
+};
+
+/**
+ * Analyze training phase
+ * Legacy function for backward compatibility
+ */
+export const analyzeTrainingPhase = (activities) => {
+  if (!activities || activities.length === 0) return 'rest';
+  
+  const analysis = workoutAnalyzer.analyzeWeeklyLoad(activities);
+  return determineTrainingPhase(analysis.weeklyTSS, analysis.weeklyDuration);
+};
+
+/**
+ * Get meal timing recommendations based on workout schedule
+ */
+export const getMealTiming = (todaysWorkouts) => {
+  if (!todaysWorkouts || todaysWorkouts.length === 0) {
+    return {
+      breakfast: '7:00 AM',
+      snack: '10:00 AM',
+      lunch: '12:30 PM',
+      dinner: '6:30 PM',
+      notes: 'Rest day - standard meal timing'
+    };
+  }
+
+  // Analyze workout times
+  const workoutTimes = todaysWorkouts.map(w => {
+    const startTime = new Date(w.start_date_local);
+    return {
+      hour: startTime.getHours(),
+      type: w.type,
+      duration: w.analysis?.duration || 0
+    };
+  });
+
+  const morningWorkout = workoutTimes.some(w => w.hour < 10);
+  const afternoonWorkout = workoutTimes.some(w => w.hour >= 14 && w.hour < 18);
+
+  if (morningWorkout) {
+    return {
+      breakfast: 'Post-workout (within 30 min)',
+      snack: '10:00 AM',
+      lunch: '12:30 PM',
+      dinner: '6:30 PM',
+      notes: 'Morning workout - prioritize post-workout breakfast with protein'
+    };
+  }
+
+  if (afternoonWorkout) {
+    return {
+      breakfast: '7:00 AM',
+      snack: '10:00 AM',
+      lunch: '12:00 PM (90 min before workout)',
+      dinner: 'Post-workout (within 1 hour)',
+      notes: 'Afternoon workout - light pre-workout lunch, recovery dinner'
+    };
+  }
+
+  return {
+    breakfast: '7:00 AM',
+    snack: '10:00 AM',
+    lunch: '12:30 PM',
+    dinner: '6:30 PM',
+    notes: 'Midday workout - adjust meal timing around workout'
+  };
+};
+
+/**
+ * Get hydration targets for the day
+ */
+export const getHydrationTarget = (todaysWorkouts, weight = 204) => {
+  const baseOz = Math.round(weight / 2); // Half body weight in oz
+  
+  if (!todaysWorkouts || todaysWorkouts.length === 0) {
+    return {
+      base: baseOz,
+      workout: 0,
+      total: baseOz,
+      guideline: `${baseOz}oz throughout the day`
+    };
+  }
+
+  const workoutHydration = todaysWorkouts.reduce((sum, w) => 
+    sum + (w.analysis?.hydrationNeeds?.oz || 0), 0
+  );
+
+  return {
+    base: baseOz,
+    workout: workoutHydration,
+    total: baseOz + workoutHydration,
+    guideline: `${baseOz}oz base + ${workoutHydration}oz during training`
+  };
 };

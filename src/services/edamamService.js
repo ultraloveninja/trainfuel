@@ -14,10 +14,45 @@ class EdamamService {
     
     // Cache to reduce API calls
     this.cache = new Map();
+    
+    // Conversion constants
+    this.GRAMS_PER_OUNCE = 28.3495;
+  }
+
+  // Utility: Convert grams to ounces
+  gramsToOunces(grams) {
+    return grams / this.GRAMS_PER_OUNCE;
+  }
+
+  // Utility: Convert ounces to grams
+  ouncesToGrams(ounces) {
+    return ounces * this.GRAMS_PER_OUNCE;
+  }
+
+  // Utility: Format weight for display with smart rounding
+  formatWeight(grams, preferOunces = true) {
+    if (!preferOunces) {
+      return `${Math.round(grams)}g`;
+    }
+
+    const ounces = this.gramsToOunces(grams);
+    
+    // For very small portions (less than 0.5 oz), show grams
+    if (ounces < 0.5) {
+      return `${Math.round(grams)}g`;
+    }
+    
+    // For portions between 0.5 and 16 oz, show ounces with 1 decimal
+    if (ounces < 16) {
+      return `${ounces.toFixed(1)} oz`;
+    }
+    
+    // For larger portions, show both oz and grams
+    return `${ounces.toFixed(1)} oz (${Math.round(grams)}g)`;
   }
 
   // Search for foods using natural language
-  async searchFood(query) {
+  async searchFood(query, preferOunces = true) {
     if (!query || query.length < 2) return [];
     
     // Check cache first
@@ -57,11 +92,11 @@ class EdamamService {
         fiber: Math.round(hint.food.nutrients.FIBTG || 0),
         sugar: Math.round(hint.food.nutrients.SUGAR || 0),
         sodium: Math.round(hint.food.nutrients.NA || 0),
-        // Store measure options for portion sizes
-        measures: hint.measures || [],
+        // Store measure options with formatted labels
+        measures: this.getMeasureOptions(hint.measures, preferOunces),
         // Per 100g by default
         servingSize: 100,
-        servingUnit: 'g'
+        servingUnit: preferOunces ? this.formatWeight(100, preferOunces) : 'g'
       }));
 
       // Cache for 1 hour
@@ -246,17 +281,30 @@ class EdamamService {
     }
   }
 
-  // Convert common household measures
-  getMeasureOptions(measures) {
+  // Convert common household measures with ounce display
+  getMeasureOptions(measures, preferOunces = true) {
     if (!measures || measures.length === 0) {
-      return [{ label: '100g', value: 100, uri: null }];
+      return [{ 
+        label: preferOunces ? '3.5 oz (100g)' : '100g', 
+        displayLabel: preferOunces ? '3.5 oz' : '100g',
+        value: 100, 
+        uri: null 
+      }];
     }
 
-    return measures.map(measure => ({
-      label: measure.label,
-      value: measure.weight, // Weight in grams
-      uri: measure.uri
-    }));
+    return measures.map(measure => {
+      const weightInGrams = measure.weight;
+      const formattedWeight = this.formatWeight(weightInGrams, preferOunces);
+      
+      return {
+        label: `${measure.label} - ${formattedWeight}`,
+        displayLabel: measure.label,
+        value: weightInGrams, // Keep in grams for API calls
+        uri: measure.uri,
+        weightInGrams: weightInGrams,
+        weightInOunces: this.gramsToOunces(weightInGrams)
+      };
+    });
   }
 }
 

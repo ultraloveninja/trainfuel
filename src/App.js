@@ -1,16 +1,24 @@
 // src/App.js - Complete Integration with New Components
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Activity, Calendar, Download, RefreshCw, Settings, AlertCircle, Zap, Brain, Home, Utensils } from 'lucide-react';
+import { Activity, Calendar, Download, RefreshCw, Settings, AlertCircle, Zap, Brain, Home, Utensils, ClipboardList } from 'lucide-react';
+
 
 // Import services
 import stravaService from './services/stravaService';
 import nutritionService from './services/nutritionService';
+import intervalsService from './services/intervalsService';
+import activityMerger from './services/activityMerger';
+
+
 
 // Import NEW components
 import WorkoutGenerator from './components/WorkoutGenerator';
 //import NutritionTracker from './components/NutritionTracker';
 import EnhancedNutritionTracker from './components/EnhancedNutritionTracker';
 import SettingsPage from './components/SettingsPage';
+import TrainingPlanCalendar from './components/TrainingPlanCalendar';
+import TrafficLightIndicator from './components/TrafficLightIndicator';
+import FitnessWidget from './components/FitnessWidget';
 
 // Import existing components
 import StravaAuth from './components/StravaAuth';
@@ -31,6 +39,8 @@ const App = () => {
   const [trainingData, setTrainingData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [intervalsConnected, setIntervalsConnected] = useState(false);
+  const [fitnessMetrics, setFitnessMetrics] = useState(null);
 
   // Add rate limiting refs
   const lastAICallRef = useRef(0);
@@ -293,33 +303,43 @@ const App = () => {
   const fetchActivities = async () => {
     setLoading(true);
     setError(null);
+
     try {
-      const fetchedActivities = await stravaService.getActivities();
+      // Fetch from both sources in parallel
+      const [stravaActivities, intervalsData] = await Promise.all([
+        stravaService.getActivities(1, 30),
+        intervalsService.isConfigured()
+          ? intervalsService.getTrainingData()
+          : Promise.resolve({ activities: [], fitness: null })
+      ]);
 
-      if (!fetchedActivities || !Array.isArray(fetchedActivities)) {
-        console.log('No activities returned from Strava');
-        setActivities([]);
-        setTrainingData(null);
-        return;
-      }
+      // Merge activities from both sources
+      const mergedActivities = activityMerger.mergeActivities(
+        stravaActivities,
+        intervalsData.activities
+      );
 
-      setActivities(fetchedActivities);
+      console.log('Activity merge stats:',
+        activityMerger.getMergeStats(mergedActivities)
+      );
+
+      setActivities(mergedActivities);
+      setFitnessMetrics(intervalsData.fitness);
+      setIntervalsConnected(intervalsService.isConfigured());
 
       // Process activities for training data
-      const processed = processStravaActivities(fetchedActivities);
-      const weeklyStats = calculateWeeklyTSS(processed);
-      const phase = analyzeTrainingPhase(processed);
-
-      setTrainingData({
-        activities: processed,
-        weeklyStats,
-        phase,
-        lastUpdated: new Date().toISOString()
+      const processed = processStravaActivities(mergedActivities, {
+        weight: userSettings.profile.weight,
+        age: userSettings.profile.age,
+        gender: userSettings.profile.gender,
+        primaryGoal: userSettings.goals.primaryGoal
       });
 
+      setTrainingData(processed);
+
     } catch (err) {
-      setError('Failed to fetch activities');
-      console.error('Fetch error:', err);
+      console.error('Error fetching activities:', err);
+      setError('Failed to fetch activities. Check your API keys.');
     } finally {
       setLoading(false);
     }
@@ -392,12 +412,18 @@ const App = () => {
               </div>
 
               <div className="flex items-center space-x-4">
+                {/* NEW: Intervals.icu indicator */}
+                {intervalsConnected && (
+                  <span className="text-xs text-blue-600">
+                    ✓ Intervals.icu
+                  </span>
+                )}
                 {/* AI Toggle */}
                 <button
                   onClick={toggleAIRecommendations}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors ${aiRecommendationsEnabled
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-gray-100 text-gray-700'
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-gray-100 text-gray-700'
                     }`}
                 >
                   <Brain className="w-4 h-4" />
@@ -427,8 +453,8 @@ const App = () => {
                 <button
                   onClick={() => setActiveTab('dashboard')}
                   className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'dashboard'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     }`}
                 >
                   <Home className="w-4 h-4 inline mr-2" />
@@ -437,8 +463,8 @@ const App = () => {
                 <button
                   onClick={() => setActiveTab('workout')}
                   className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'workout'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     }`}
                 >
                   <Activity className="w-4 h-4 inline mr-2" />
@@ -447,18 +473,28 @@ const App = () => {
                 <button
                   onClick={() => setActiveTab('nutrition')}
                   className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'nutrition'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     }`}
                 >
                   <Utensils className="w-4 h-4 inline mr-2" />
                   Nutrition
                 </button>
                 <button
+                  onClick={() => setActiveTab('trainingplan')}
+                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'trainingplan'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                >
+                  <ClipboardList className="w-4 h-4 inline mr-2" />
+                  Training Plan
+                </button>
+                <button
                   onClick={() => setActiveTab('calendar')}
                   className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'calendar'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     }`}
                 >
                   <Calendar className="w-4 h-4 inline mr-2" />
@@ -467,8 +503,8 @@ const App = () => {
                 <button
                   onClick={() => setActiveTab('settings')}
                   className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'settings'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     }`}
                 >
                   <Settings className="w-4 h-4 inline mr-2" />
@@ -493,22 +529,41 @@ const App = () => {
           ) : (
             <>
               {activeTab === 'dashboard' && (
-                <DashboardView
-                  athlete={athlete}
-                  activities={activities}
-                  trainingData={trainingData}
-                  nutritionPlan={dailyNutrition}
-                  upcomingEvents={upcomingEvents}
-                  loading={loading}
-                />
+                <>
+                  {/* Dashboard shows profile first (inside DashboardView), then FitnessWidget */}
+                  <DashboardView
+                    athlete={athlete}
+                    activities={activities}
+                    trainingData={trainingData}
+                    nutritionPlan={dailyNutrition}
+                    upcomingEvents={upcomingEvents}
+                    loading={loading}
+                  />
+
+                  {/* FitnessWidget appears AFTER DashboardView content */}
+                  {fitnessMetrics && fitnessMetrics.ctl > 0 && (
+                    <div className="mt-6">
+                      <FitnessWidget fitness={fitnessMetrics} />
+                    </div>
+                  )}
+                </>
               )}
 
               {activeTab === 'workout' && (
-                <WorkoutGenerator
-                  stravaData={trainingData}
-                  upcomingEvents={upcomingEvents}
-                  isInSeason={userSettings.goals.currentPhase === 'in_season'}
-                />
+                <>
+                  {/* Workout shows FitnessWidget FIRST */}
+                  {fitnessMetrics && fitnessMetrics.ctl > 0 && (
+                    <div className="mb-6">
+                      <FitnessWidget fitness={fitnessMetrics} />
+                    </div>
+                  )}
+
+                  <WorkoutGenerator
+                    stravaData={trainingData}
+                    upcomingEvents={upcomingEvents}
+                    isInSeason={userSettings.goals.currentPhase === 'in_season'}
+                  />
+                </>
               )}
 
               {activeTab === 'nutrition' && (
@@ -519,6 +574,10 @@ const App = () => {
                   currentWeight={userSettings.profile.weight}
                   onFoodLogUpdate={handleFoodLogUpdate}
                 />
+              )}
+
+              {activeTab === 'trainingplan' && (
+                <TrainingPlanCalendar userSettings={userSettings} />
               )}
 
               {activeTab === 'calendar' && (

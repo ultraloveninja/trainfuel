@@ -4,6 +4,7 @@
 .env.development.local
 .env.test.local
 .env.production.local
+.firebase
 
 # Dependencies
 node_modules/
@@ -65,3 +66,6 @@ logs
 # Temporary folders
 tmp/
 temp/
+
+# Other
+functions/.runtimeconfig.json

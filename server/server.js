@@ -25,8 +25,8 @@ app.post('/api/claude', async (req, res) => {
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
       {
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 2000,
         messages: [
           {
             role: 'user',
@@ -51,12 +51,15 @@ app.post('/api/claude', async (req, res) => {
 
   } catch (error) {
     console.error('Error calling Claude API:', error.response?.data || error.message);
-    
+
     // Return a fallback response if Claude API fails
     res.status(500).json({
       error: 'Failed to get AI response',
       fallback: true,
-      message: error.message
+      message: error.message,
+      statusCode: error.response?.status,
+      // Don't send API key or sensitive data
+      details: process.env.NODE_ENV === 'development' ? error.response?.data : undefined
     });
   }
 });
