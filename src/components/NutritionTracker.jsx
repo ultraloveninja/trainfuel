@@ -10,7 +10,7 @@ const FOOD_DATABASE = [
   { id: 4, name: 'Eggs (2 large)', calories: 140, protein: 12, carbs: 1, fat: 10, category: 'protein' },
   { id: 5, name: 'Greek Yogurt (1 cup)', calories: 130, protein: 20, carbs: 9, fat: 0, category: 'protein' },
   { id: 6, name: 'Tofu (4oz)', calories: 95, protein: 10, carbs: 2, fat: 6, category: 'protein' },
-  
+
   // Carbs
   { id: 7, name: 'Brown Rice (1 cup)', calories: 215, protein: 5, carbs: 45, fat: 2, category: 'carbs' },
   { id: 8, name: 'Quinoa (1 cup)', calories: 220, protein: 8, carbs: 40, fat: 4, category: 'carbs' },
@@ -18,19 +18,19 @@ const FOOD_DATABASE = [
   { id: 10, name: 'Oatmeal (1/2 cup dry)', calories: 150, protein: 5, carbs: 27, fat: 3, category: 'carbs' },
   { id: 11, name: 'Whole Wheat Bread (2 slices)', calories: 160, protein: 8, carbs: 30, fat: 2, category: 'carbs' },
   { id: 12, name: 'Banana (medium)', calories: 105, protein: 1, carbs: 27, fat: 0, category: 'carbs' },
-  
+
   // Fats
   { id: 13, name: 'Avocado (1/2)', calories: 120, protein: 1, carbs: 6, fat: 11, category: 'fats' },
   { id: 14, name: 'Almond Butter (2 tbsp)', calories: 190, protein: 7, carbs: 8, fat: 16, category: 'fats' },
   { id: 15, name: 'Olive Oil (1 tbsp)', calories: 120, protein: 0, carbs: 0, fat: 14, category: 'fats' },
   { id: 16, name: 'Nuts, Mixed (1oz)', calories: 170, protein: 5, carbs: 6, fat: 15, category: 'fats' },
-  
+
   // Vegetables
   { id: 17, name: 'Broccoli (1 cup)', calories: 30, protein: 2, carbs: 6, fat: 0, category: 'vegetables' },
   { id: 18, name: 'Spinach (2 cups)', calories: 14, protein: 2, carbs: 2, fat: 0, category: 'vegetables' },
   { id: 19, name: 'Bell Peppers (1 cup)', calories: 30, protein: 1, carbs: 7, fat: 0, category: 'vegetables' },
   { id: 20, name: 'Mixed Greens (2 cups)', calories: 20, protein: 2, carbs: 4, fat: 0, category: 'vegetables' },
-  
+
   // Common meals
   { id: 21, name: 'Protein Shake (your recipe)', calories: 250, protein: 40, carbs: 15, fat: 5, category: 'beverages' },
   { id: 22, name: 'Rice Cakes with Avocado', calories: 200, protein: 3, carbs: 20, fat: 12, category: 'snacks' },
@@ -42,7 +42,7 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
   const [selectedMeal, setSelectedMeal] = useState('breakfast');
   const [customSuggestions, setCustomSuggestions] = useState([]);
   const isInitialMount = useRef(true);
-  
+
   // Food logging state
   const [todaysFoodLog, setTodaysFoodLog] = useState(() => {
     const saved = localStorage.getItem('trainfuel_today_food_log');
@@ -62,7 +62,7 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
       water: 0
     };
   });
-  
+
   const [showAddFood, setShowAddFood] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [customFood, setCustomFood] = useState({
@@ -75,20 +75,45 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
   const [selectedMealType, setSelectedMealType] = useState('breakfast');
 
   // Save food log to localStorage whenever it changes
+  // Check and reset food log if date has changed (handles midnight rollover)
   useEffect(() => {
-    // Skip the initial mount
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      return;
-    }
-    
-    localStorage.setItem('trainfuel_today_food_log', JSON.stringify(todaysFoodLog));
-    
-    // Only call parent update if provided and data actually changed
-    if (onFoodLogUpdate) {
-      onFoodLogUpdate(todaysFoodLog);
-    }
-  }, [todaysFoodLog]);
+    const checkDateAndReset = () => {
+      const today = new Date().toISOString().split('T')[0];
+
+      if (todaysFoodLog.date !== today) {
+        console.log('Date changed! Resetting food log from', todaysFoodLog.date, 'to', today);
+
+        // Archive yesterday's log to history before clearing
+        if (onFoodLogUpdate) {
+          onFoodLogUpdate(todaysFoodLog);
+        }
+
+        // Clear the old localStorage entry
+        localStorage.removeItem('trainfuel_today_food_log');
+
+        // Reset to fresh log for today
+        const freshLog = {
+          date: today,
+          breakfast: [],
+          lunch: [],
+          dinner: [],
+          snacks: [],
+          water: 0
+        };
+
+        setTodaysFoodLog(freshLog);
+        localStorage.setItem('trainfuel_today_food_log', JSON.stringify(freshLog));
+      }
+    };
+
+    // Check immediately on mount
+    checkDateAndReset();
+
+    // Check every minute in case user keeps app open past midnight
+    const intervalId = setInterval(checkDateAndReset, 60000);
+
+    return () => clearInterval(intervalId);
+  }, [todaysFoodLog.date, onFoodLogUpdate]);
 
   // Calculate consumed macros
   const calculateConsumedMacros = () => {
@@ -98,7 +123,7 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
       ...todaysFoodLog.dinner,
       ...todaysFoodLog.snacks
     ];
-    
+
     return allFoods.reduce((totals, food) => ({
       calories: totals.calories + (food.calories || 0),
       protein: totals.protein + (food.protein || 0),
@@ -111,7 +136,7 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
   const calculateRemainingMacros = () => {
     const consumed = calculateConsumedMacros();
     const target = mealPlan?.macros || { calories: 2000, protein: 150, carbs: 200, fat: 70 };
-    
+
     return {
       calories: Math.max(0, (target.calories || 2000) - consumed.calories),
       protein: Math.max(0, (target.protein || 150) - consumed.protein),
@@ -127,12 +152,12 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
       id: Date.now(), // Add unique ID for removal
       timestamp: new Date().toISOString()
     };
-    
+
     setTodaysFoodLog(prev => ({
       ...prev,
       [mealType]: [...prev[mealType], foodWithTimestamp]
     }));
-    
+
     setShowAddFood(false);
     setSearchQuery('');
     setCustomFood({ name: '', calories: '', protein: '', carbs: '', fat: '' });
@@ -218,11 +243,10 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
             </span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-3">
-            <div 
-              className={`h-3 rounded-full transition-all ${
-                percentageConsumed > 100 ? 'bg-red-500' : 
-                percentageConsumed > 80 ? 'bg-yellow-500' : 'bg-green-500'
-              }`}
+            <div
+              className={`h-3 rounded-full transition-all ${percentageConsumed > 100 ? 'bg-red-500' :
+                  percentageConsumed > 80 ? 'bg-yellow-500' : 'bg-green-500'
+                }`}
               style={{ width: `${Math.min(100, percentageConsumed)}%` }}
             />
           </div>
@@ -236,7 +260,7 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
               <span className="text-xs text-gray-500">{consumed.protein}g / {mealPlan?.macros.protein || 150}g</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
+              <div
                 className="h-2 rounded-full bg-blue-500"
                 style={{ width: `${Math.min(100, (consumed.protein / (mealPlan?.macros.protein || 150)) * 100)}%` }}
               />
@@ -248,7 +272,7 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
               <span className="text-xs text-gray-500">{consumed.carbs}g / {mealPlan?.macros.carbs || 200}g</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
+              <div
                 className="h-2 rounded-full bg-green-500"
                 style={{ width: `${Math.min(100, (consumed.carbs / (mealPlan?.macros.carbs || 200)) * 100)}%` }}
               />
@@ -260,7 +284,7 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
               <span className="text-xs text-gray-500">{consumed.fat}g / {mealPlan?.macros.fat || 70}g</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
+              <div
                 className="h-2 rounded-full bg-yellow-500"
                 style={{ width: `${Math.min(100, (consumed.fat / (mealPlan?.macros.fat || 70)) * 100)}%` }}
               />
@@ -325,7 +349,7 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
                 + Add
               </button>
             </div>
-            
+
             {todaysFoodLog[mealType].length > 0 ? (
               <div className="space-y-2">
                 {todaysFoodLog[mealType].map(food => (
@@ -348,7 +372,7 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
             ) : (
               <p className="text-sm text-gray-400">No foods logged</p>
             )}
-            
+
             {/* Meal subtotals */}
             {todaysFoodLog[mealType].length > 0 && (
               <div className="mt-2 pt-2 border-t text-xs text-gray-600">
@@ -439,7 +463,7 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
                     type="text"
                     placeholder="Food name"
                     value={customFood.name}
-                    onChange={(e) => setCustomFood({...customFood, name: e.target.value})}
+                    onChange={(e) => setCustomFood({ ...customFood, name: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                   />
                   <div className="grid grid-cols-2 gap-2">
@@ -447,28 +471,28 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
                       type="number"
                       placeholder="Calories"
                       value={customFood.calories}
-                      onChange={(e) => setCustomFood({...customFood, calories: e.target.value})}
+                      onChange={(e) => setCustomFood({ ...customFood, calories: e.target.value })}
                       className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                     <input
                       type="number"
                       placeholder="Protein (g)"
                       value={customFood.protein}
-                      onChange={(e) => setCustomFood({...customFood, protein: e.target.value})}
+                      onChange={(e) => setCustomFood({ ...customFood, protein: e.target.value })}
                       className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                     <input
                       type="number"
                       placeholder="Carbs (g)"
                       value={customFood.carbs}
-                      onChange={(e) => setCustomFood({...customFood, carbs: e.target.value})}
+                      onChange={(e) => setCustomFood({ ...customFood, carbs: e.target.value })}
                       className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                     <input
                       type="number"
                       placeholder="Fat (g)"
                       value={customFood.fat}
-                      onChange={(e) => setCustomFood({...customFood, fat: e.target.value})}
+                      onChange={(e) => setCustomFood({ ...customFood, fat: e.target.value })}
                       className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>

@@ -47,21 +47,45 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
     servings: 1
   });
 
-  // Save food log to localStorage whenever it changes
+  // Check and reset food log if date has changed (handles midnight rollover)
   useEffect(() => {
-    // Skip the initial mount to prevent infinite loop
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      return;
-    }
+    const checkDateAndReset = () => {
+      const today = new Date().toISOString().split('T')[0];
 
-    localStorage.setItem('trainfuel_today_food_log', JSON.stringify(todaysFoodLog));
+      if (todaysFoodLog.date !== today) {
+        console.log('Date changed! Resetting food log from', todaysFoodLog.date, 'to', today);
 
-    // Only call parent update if provided
-    if (onFoodLogUpdate) {
-      onFoodLogUpdate(todaysFoodLog);
-    }
-  }, [todaysFoodLog]);
+        // Archive yesterday's log to history before clearing
+        if (onFoodLogUpdate) {
+          onFoodLogUpdate(todaysFoodLog);
+        }
+
+        // Clear the old localStorage entry
+        localStorage.removeItem('trainfuel_today_food_log');
+
+        // Reset to fresh log for today
+        const freshLog = {
+          date: today,
+          breakfast: [],
+          lunch: [],
+          dinner: [],
+          snacks: [],
+          water: 0
+        };
+
+        setTodaysFoodLog(freshLog);
+        localStorage.setItem('trainfuel_today_food_log', JSON.stringify(freshLog));
+      }
+    };
+
+    // Check immediately on mount
+    checkDateAndReset();
+
+    // Check every minute in case user keeps app open past midnight
+    const intervalId = setInterval(checkDateAndReset, 60000);
+
+    return () => clearInterval(intervalId);
+  }, [todaysFoodLog.date, onFoodLogUpdate]);
 
   // Search Edamam with debounce
   useEffect(() => {
@@ -233,6 +257,9 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
   };
 
   // Generate smart meal suggestions based on remaining macros
+  // PATCH FOR: src/components/EnhancedNutritionTracker.jsx
+  // REPLACE the generateSmartSuggestions function (lines 236-335) with this:
+
   const generateSmartSuggestions = () => {
     const remaining = calculateRemainingMacros();
     const suggestions = [];
@@ -244,8 +271,54 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
     else if (hour < 14) nextMeal = 'lunch';
     else if (hour < 20) nextMeal = 'dinner';
 
+    // BREAKFAST-SPECIFIC SUGGESTIONS (only if it's morning)
+    if (nextMeal === 'breakfast') {
+      if (remaining.protein > 30) {
+        suggestions.push({
+          name: "Coffee Protein Shake",
+          meal: "breakfast",
+          description: "Quick, liquid-focused breakfast following Nick Chase principles",
+          instructions: "Blend 2 shots espresso, 2 scoops protein powder, 1 cup almond milk, and ice",
+          calories: 228,
+          protein: 40,
+          carbs: 8,
+          fat: 4
+        });
+      }
+
+      if (remaining.carbs > 40) {
+        suggestions.push({
+          name: "Energy Oatmeal Bowl",
+          meal: "breakfast",
+          description: "Perfect for fueling your next workout",
+          instructions: "Cook 1 cup oats, top with banana, berries, honey, and a scoop of protein powder",
+          calories: 380,
+          protein: 25,
+          carbs: 58,
+          fat: 8
+        });
+      }
+
+      if (remaining.protein > 20) {
+        suggestions.push({
+          name: "Berry Smoothie Bowl",
+          meal: "breakfast",
+          description: "Antioxidant-rich liquid breakfast",
+          instructions: "Blend frozen berries, protein powder, Greek yogurt, and almond milk. Top with granola",
+          calories: 320,
+          protein: 28,
+          carbs: 42,
+          fat: 6
+        });
+      }
+
+      // Always return early for breakfast to avoid lunch/dinner suggestions
+      return suggestions;
+    }
+
+    // LUNCH/DINNER SUGGESTIONS (only if NOT breakfast time)
     // High protein, moderate carb suggestions if protein is low
-    if (remaining.protein > 30) {
+    if (remaining.protein > 30 && nextMeal !== 'breakfast') {
       suggestions.push({
         name: "Grilled Chicken Power Bowl",
         meal: nextMeal,
@@ -259,7 +332,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
     }
 
     // Balanced meal if all macros are moderate
-    if (remaining.calories > 400 && remaining.protein > 20 && remaining.carbs > 30) {
+    if (remaining.calories > 400 && remaining.protein > 20 && remaining.carbs > 30 && nextMeal !== 'breakfast') {
       suggestions.push({
         name: "Salmon & Sweet Potato",
         meal: nextMeal,
@@ -272,20 +345,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
       });
     }
 
-    // Quick carb-focused meal for pre/post workout
-    if (remaining.carbs > 40) {
-      suggestions.push({
-        name: "Energy Oatmeal Bowl",
-        meal: nextMeal === 'dinner' ? 'snacks' : nextMeal,
-        description: "Perfect for fueling your next workout or recovery",
-        instructions: "Cook 1 cup oats, top with banana, berries, honey, and a scoop of protein powder",
-        calories: 380,
-        protein: 25,
-        carbs: 58,
-        fat: 8
-      });
-    }
-
+    // SNACK OPTIONS (anytime)
     // Light snack option if calories are low
     if (remaining.calories < 300) {
       suggestions.push({
@@ -301,7 +361,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
     }
 
     // If very high calories remaining, suggest a full meal
-    if (remaining.calories > 600) {
+    if (remaining.calories > 600 && nextMeal !== 'breakfast') {
       suggestions.push({
         name: "Turkey & Avocado Wrap",
         meal: nextMeal,
@@ -314,20 +374,21 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
       });
     }
 
-    // Always include a Nick Chase-style liquid option
-    suggestions.push({
-      name: "Recovery Smoothie",
-      meal: "snacks",
-      description: "Nick Chase-approved liquid nutrition for easy digestion",
-      instructions: "Blend: 1 banana, 1 scoop protein, 1 cup almond milk, 1 tbsp almond butter, spinach",
-      calories: 320,
-      protein: 28,
-      carbs: 35,
-      fat: 10
-    });
+    // Always include a Nick Chase-style liquid option (but only for non-breakfast)
+    if (nextMeal !== 'breakfast') {
+      suggestions.push({
+        name: "Recovery Smoothie",
+        meal: "snacks",
+        description: "Post-workout liquid nutrition",
+        instructions: "Blend protein powder, banana, berries, spinach, and almond milk",
+        calories: 280,
+        protein: 30,
+        carbs: 35,
+        fat: 5
+      });
+    }
 
-    // Return top 3 suggestions
-    return suggestions.slice(0, 3);
+    return suggestions;
   };
 
   // Update water intake

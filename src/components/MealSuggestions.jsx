@@ -41,6 +41,43 @@ const NUTRITION_PRINCIPLES = {
   }
 };
 
+// NEW: Validation function to filter inappropriate meal suggestions
+const validateMealAppropriate = (meal) => {
+  const breakfastInappropriate = [
+    'grilled chicken',
+    'chicken breast',
+    'salmon',
+    'grilled',
+    'roasted chicken',
+    'power bowl',
+    'steak',
+    'beef',
+    'pork',
+    'turkey breast',
+    'baked chicken',
+    'seared',
+    'pan-fried'
+  ];
+  
+  const name = (meal.name || '').toLowerCase();
+  const mealType = (meal.meal || '').toLowerCase();
+  
+  if (mealType === 'breakfast') {
+    const hasInappropriateKeyword = breakfastInappropriate.some(keyword => 
+      name.includes(keyword)
+    );
+    
+    if (hasInappropriateKeyword) {
+      console.warn('❌ FILTERED inappropriate breakfast suggestion:', meal.name);
+      return false;
+    }
+    
+    console.log('✅ Validated breakfast suggestion:', meal.name);
+  }
+  
+  return true;
+};
+
 const MealSuggestions = ({ trainingData, foodLog, userPreferences, currentWeight }) => {
   const [mealPlan, setMealPlan] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -54,7 +91,7 @@ const MealSuggestions = ({ trainingData, foodLog, userPreferences, currentWeight
   const calculateDailyCalories = (weight, activityLevel, goal) => {
     // Base metabolic rate estimation
     const bmr = weight * 10; // Simplified BMR
-    
+
     // Activity multiplier based on training
     const activityMultipliers = {
       rest: 1.2,
@@ -62,9 +99,9 @@ const MealSuggestions = ({ trainingData, foodLog, userPreferences, currentWeight
       moderate: 1.6,
       heavy: 1.8
     };
-    
+
     const tdee = bmr * (activityMultipliers[activityLevel] || 1.5);
-    
+
     // Adjust for goals
     if (goal === 'weight_loss') return tdee - 300;
     if (goal === 'maintain') return tdee;
@@ -73,10 +110,10 @@ const MealSuggestions = ({ trainingData, foodLog, userPreferences, currentWeight
 
   const analyzeTrainingLoad = (activities) => {
     if (!activities || activities.length === 0) return 'rest';
-    
+
     const todayActivity = activities[0];
     const duration = todayActivity?.moving_time / 3600 || 0;
-    
+
     if (duration === 0) return 'rest';
     if (duration < 1) return 'light';
     if (duration < 2) return 'moderate';
@@ -85,7 +122,7 @@ const MealSuggestions = ({ trainingData, foodLog, userPreferences, currentWeight
 
   const generateMealPlan = async () => {
     setLoading(true);
-    
+
     try {
       const activityLevel = analyzeTrainingLoad(trainingData?.activities);
       const dailyCalories = calculateDailyCalories(
@@ -98,7 +135,7 @@ const MealSuggestions = ({ trainingData, foodLog, userPreferences, currentWeight
       const proteinGrams = Math.round((currentWeight || 204) * 0.8); // 0.8g per lb for endurance athletes
       const carbsGrams = activityLevel === 'heavy' ? 250 : activityLevel === 'moderate' ? 200 : 150;
       const fatGrams = Math.round((dailyCalories - (proteinGrams * 4) - (carbsGrams * 4)) / 9);
-      
+
       const macros = {
         protein: proteinGrams,
         carbs: carbsGrams,
@@ -130,7 +167,7 @@ const MealSuggestions = ({ trainingData, foodLog, userPreferences, currentWeight
       });
 
       setCustomSuggestions(suggestions);
-      
+
     } catch (error) {
       console.error('Error generating meal plan:', error);
       // Fallback to basic meal plan
@@ -173,10 +210,10 @@ const MealSuggestions = ({ trainingData, foodLog, userPreferences, currentWeight
     // Add training-specific nutrition
     if (activityLevel !== 'rest') {
       meals.training = {
-        pre: trainingTime === 'morning' 
+        pre: trainingTime === 'morning'
           ? NUTRITION_PRINCIPLES.training.morning.preworkout
           : NUTRITION_PRINCIPLES.training.afternoon.preworkout,
-        during: activityLevel === 'heavy' 
+        during: activityLevel === 'heavy'
           ? NUTRITION_PRINCIPLES.training.morning.during
           : 'Water/electrolytes only',
         post: NUTRITION_PRINCIPLES.training.morning.postworkout
@@ -195,30 +232,39 @@ const MealSuggestions = ({ trainingData, foodLog, userPreferences, currentWeight
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          prompt: `Based on Nick Chase's nutrition principles and the following data, suggest 3 specific meals:
-              
-              Activity level: ${activityLevel}
-              Daily macros: Protein ${macros.protein}g, Carbs ${macros.carbs}g, Fat ${macros.fat}g
-              Dietary preferences: ${preferences?.restrictions || 'None'}
-              Recent foods: ${foodLog?.recent?.join(', ') || 'Not tracked'}
-              
-              Follow Nick's principles:
-              - Liquid nutrition during training
-              - Protein timing around workouts
-              - Vegetable-heavy dinners
-              - Whole foods focus
-              
-              Respond with a JSON array of 3 meal suggestions:
-              {
-                "meal": "breakfast/lunch/dinner",
-                "name": "meal name",
-                "ingredients": ["list of ingredients"],
-                "macros": {"protein": X, "carbs": Y, "fat": Z, "calories": Total},
-                "prepTime": "X minutes",
-                "instructions": "brief cooking instructions"
-              }
-              
-              ONLY respond with valid JSON, no other text.`
+          prompt: `Based on Nick Chase's nutrition principles, suggest 3 specific meals:
+
+Activity level: ${activityLevel}
+Daily macros: Protein ${macros.protein}g, Carbs ${macros.carbs}g, Fat ${macros.fat}g
+Dietary preferences: ${preferences?.restrictions || 'None'}
+
+Follow Nick's principles:
+1. Breakfast: Light, liquid-focused (protein shakes, smoothies, quick oats). NOT full meals with grilled meat!
+2. Lunch: Balanced, meal prep friendly - protein + grain + vegetables
+3. Dinner: Vegetable-heavy, lean protein, minimal starch
+4. Snacks: Quick, portable, 200-300 calories
+
+CRITICAL: Ensure meal suggestions are APPROPRIATE for their meal type:
+- Breakfast = Coffee protein shake, smoothie bowl, protein oats, Greek yogurt bowl (LIGHT & QUICK, NO GRILLED MEATS)
+- Lunch = Chicken breast + quinoa + vegetables, turkey bowl
+- Dinner = Salmon + roasted vegetables, chicken + large salad (HEAVY ON VEGETABLES)
+- Snacks = Rice cakes + avocado, Greek yogurt + berries
+
+DO NOT suggest for breakfast: grilled chicken, salmon, baked chicken, power bowls, or any meal requiring more than 10 minutes prep time.
+
+Respond ONLY in valid JSON format:
+{
+  "suggestions": [
+    {
+      "meal": "breakfast|lunch|dinner",
+      "name": "Meal name",
+      "ingredients": ["ingredient 1", "ingredient 2"],
+      "macros": {"protein": 30, "carbs": 45, "fat": 10, "calories": 390},
+      "prepTime": "5 minutes",
+      "instructions": "Step by step"
+    }
+  ]
+}`
         })
       });
 
@@ -229,17 +275,51 @@ const MealSuggestions = ({ trainingData, foodLog, userPreferences, currentWeight
           responseText = responseText.text;
         }
         responseText = responseText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-        return JSON.parse(responseText);
+        
+        const parsed = JSON.parse(responseText);
+        
+        // FIXED: Extract the suggestions array properly
+        let suggestions = parsed.suggestions || parsed || [];
+        
+        // Ensure it's an array
+        if (!Array.isArray(suggestions)) {
+          console.warn('AI response is not an array, using fallback');
+          return getFallbackSuggestions();
+        }
+        
+        // FIXED: Filter out inappropriate suggestions
+        const validSuggestions = suggestions.filter(validateMealAppropriate);
+        
+        if (validSuggestions.length === 0) {
+          console.warn('All AI suggestions were filtered out, using fallback');
+          return getFallbackSuggestions();
+        }
+        
+        console.log(`✅ Returning ${validSuggestions.length} validated meal suggestions`);
+        return validSuggestions;
       }
     } catch (error) {
       console.error('Error getting AI meal suggestions:', error);
     }
 
-    // Fallback suggestions
+    // Fallback if AI fails
+    return getFallbackSuggestions();
+  };
+
+  // FIXED: Moved to separate function for reuse
+  const getFallbackSuggestions = () => {
     return [
       {
+        meal: "breakfast",
+        name: "Coffee Protein Shake",
+        ingredients: ["2 shots espresso", "2 scoops protein powder", "1 cup almond milk", "ice"],
+        macros: { protein: 40, carbs: 8, fat: 4, calories: 228 },
+        prepTime: "2 minutes",
+        instructions: "Blend espresso, protein powder, almond milk, and ice until smooth."
+      },
+      {
         meal: "lunch",
-        name: "Turkey Quinoa Power Bowl",
+        name: "Turkey Quinoa Bowl",
         ingredients: ["6oz ground turkey", "1/2 cup quinoa", "2 cups mixed greens", "1/2 avocado", "cherry tomatoes"],
         macros: { protein: 45, carbs: 35, fat: 15, calories: 455 },
         prepTime: "25 minutes",
@@ -252,14 +332,6 @@ const MealSuggestions = ({ trainingData, foodLog, userPreferences, currentWeight
         macros: { protein: 50, carbs: 30, fat: 10, calories: 410 },
         prepTime: "35 minutes",
         instructions: "Season and bake chicken at 400°F. Roast vegetables with olive oil. Serve together."
-      },
-      {
-        meal: "breakfast",
-        name: "Post-Workout Protein Oats",
-        ingredients: ["1/2 cup oats", "1 scoop protein powder", "1/2 banana", "1 tbsp almond butter", "cinnamon"],
-        macros: { protein: 30, carbs: 45, fat: 10, calories: 390 },
-        prepTime: "5 minutes",
-        instructions: "Cook oats, mix in protein powder, top with banana and almond butter."
       }
     ];
   };
@@ -296,12 +368,11 @@ const MealSuggestions = ({ trainingData, foodLog, userPreferences, currentWeight
             <Utensils className="w-5 h-5" />
             Today's Nutrition Plan
           </h2>
-          <span className={`px-3 py-1 rounded-full text-sm ${
-            mealPlan?.activityLevel === 'heavy' ? 'bg-red-100 text-red-700' :
+          <span className={`px-3 py-1 rounded-full text-sm ${mealPlan?.activityLevel === 'heavy' ? 'bg-red-100 text-red-700' :
             mealPlan?.activityLevel === 'moderate' ? 'bg-yellow-100 text-yellow-700' :
-            mealPlan?.activityLevel === 'light' ? 'bg-green-100 text-green-700' :
-            'bg-gray-100 text-gray-700'
-          }`}>
+              mealPlan?.activityLevel === 'light' ? 'bg-green-100 text-green-700' :
+                'bg-gray-100 text-gray-700'
+            }`}>
             {mealPlan?.activityLevel} training day
           </span>
         </div>
@@ -386,7 +457,7 @@ const MealSuggestions = ({ trainingData, foodLog, userPreferences, currentWeight
             <ChefHat className="w-5 h-5" />
             Recommended Meals
           </h3>
-          <select 
+          <select
             value={selectedMeal}
             onChange={(e) => setSelectedMeal(e.target.value)}
             className="px-3 py-1 border rounded-lg text-sm"
@@ -401,43 +472,43 @@ const MealSuggestions = ({ trainingData, foodLog, userPreferences, currentWeight
           {customSuggestions
             .filter(s => !selectedMeal || s.meal === selectedMeal)
             .map((suggestion, index) => (
-            <div key={index} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-              <div className="flex justify-between items-start mb-2">
-                <h4 className="font-semibold text-lg">{suggestion.name}</h4>
-                <span className="text-sm bg-gray-100 px-2 py-1 rounded">
-                  <Clock className="w-3 h-3 inline mr-1" />
-                  {suggestion.prepTime}
-                </span>
-              </div>
-              
-              <div className="mb-3">
-                <p className="text-sm text-gray-600 font-medium mb-1">Ingredients:</p>
-                <p className="text-sm text-gray-700">
-                  {suggestion.ingredients.join(', ')}
-                </p>
-              </div>
+              <div key={index} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                <div className="flex justify-between items-start mb-2">
+                  <h4 className="font-semibold text-lg">{suggestion.name}</h4>
+                  <span className="text-sm bg-gray-100 px-2 py-1 rounded">
+                    <Clock className="w-3 h-3 inline mr-1" />
+                    {suggestion.prepTime}
+                  </span>
+                </div>
 
-              <div className="mb-3">
-                <p className="text-sm text-gray-600 font-medium mb-1">Instructions:</p>
-                <p className="text-sm text-gray-700">{suggestion.instructions}</p>
-              </div>
+                <div className="mb-3">
+                  <p className="text-sm text-gray-600 font-medium mb-1">Ingredients:</p>
+                  <p className="text-sm text-gray-700">
+                    {suggestion.ingredients.join(', ')}
+                  </p>
+                </div>
 
-              <div className="flex gap-3 pt-3 border-t">
-                <span className="text-xs bg-orange-50 text-orange-700 px-2 py-1 rounded">
-                  {suggestion.macros.calories} cal
-                </span>
-                <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded">
-                  {suggestion.macros.protein}g protein
-                </span>
-                <span className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded">
-                  {suggestion.macros.carbs}g carbs
-                </span>
-                <span className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded">
-                  {suggestion.macros.fat}g fat
-                </span>
+                <div className="mb-3">
+                  <p className="text-sm text-gray-600 font-medium mb-1">Instructions:</p>
+                  <p className="text-sm text-gray-700">{suggestion.instructions}</p>
+                </div>
+
+                <div className="flex gap-3 pt-3 border-t">
+                  <span className="text-xs bg-orange-50 text-orange-700 px-2 py-1 rounded">
+                    {suggestion.macros.calories} cal
+                  </span>
+                  <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded">
+                    {suggestion.macros.protein}g protein
+                  </span>
+                  <span className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded">
+                    {suggestion.macros.carbs}g carbs
+                  </span>
+                  <span className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded">
+                    {suggestion.macros.fat}g fat
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
         </div>
       </div>
 
