@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Utensils, Clock, Flame, Target, Info, ChefHat, Plus, Search, X, Check, TrendingUp, Calendar, Camera, Loader } from 'lucide-react';
+import { Utensils, Clock, Flame, Target, Info, ChefHat, Plus, Search, X, Check, TrendingUp, Calendar, Camera, Loader, Save, BookOpen } from 'lucide-react';
 import edamamService from '../services/edamamService';
+import recipeService from '../services/recipeService';
 import TrafficLightIndicator from './TrafficLightIndicator';
 
 const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeight, onFoodLogUpdate }) => {
@@ -38,7 +39,13 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
   const [searchQuery, setSearchQuery] = useState('');
   const [naturalLanguageInput, setNaturalLanguageInput] = useState('');
   const [selectedMealType, setSelectedMealType] = useState('breakfast');
-  const [activeTab, setActiveTab] = useState('search'); // 'search', 'natural', 'recipe'
+  const [activeTab, setActiveTab] = useState('search'); // 'search', 'natural', 'recipe', 'saved'
+  
+  // Saved recipes state
+  const [savedRecipes, setSavedRecipes] = useState([]);
+  const [showSaveRecipeModal, setShowSaveRecipeModal] = useState(false);
+  const [recipeNameInput, setRecipeNameInput] = useState('');
+  const [mealTypeToSave, setMealTypeToSave] = useState(null);
 
   // Recipe analysis state
   const [recipeInput, setRecipeInput] = useState({
@@ -46,6 +53,115 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
     ingredients: '',
     servings: 1
   });
+
+  // Load saved recipes on mount
+  useEffect(() => {
+    loadSavedRecipes();
+  }, []);
+
+  const loadSavedRecipes = () => {
+    const recipes = recipeService.getAllRecipes();
+    setSavedRecipes(recipes);
+  };
+
+  // Save current meal items as a recipe
+  const saveCurrentMealAsRecipe = () => {
+    if (!mealTypeToSave || !recipeNameInput.trim()) {
+      alert('Please enter a recipe name');
+      return;
+    }
+
+    const items = todaysFoodLog[mealTypeToSave];
+    if (!items || items.length === 0) {
+      alert('No items to save in this meal');
+      return;
+    }
+
+    try {
+      const recipeData = recipeService.createFromMealItems(
+        recipeNameInput.trim(),
+        mealTypeToSave,
+        items
+      );
+
+      recipeService.saveRecipe(recipeData);
+      loadSavedRecipes();
+      
+      setShowSaveRecipeModal(false);
+      setRecipeNameInput('');
+      setMealTypeToSave(null);
+      
+      alert('Recipe saved successfully!');
+    } catch (error) {
+      console.error('Error saving recipe:', error);
+      alert('Failed to save recipe');
+    }
+  };
+
+  // Add a saved recipe to the food log
+  const addSavedRecipe = (recipe, targetMealType) => {
+    const itemsToAdd = recipe.items.map(item => ({
+      ...item,
+      id: Date.now() + Math.random(), // New ID for each instance
+      timestamp: new Date().toISOString()
+    }));
+
+    setTodaysFoodLog(prev => ({
+      ...prev,
+      [targetMealType]: [...prev[targetMealType], ...itemsToAdd]
+    }));
+
+    // Mark recipe as used
+    recipeService.markAsUsed(recipe.id);
+    loadSavedRecipes();
+
+    setShowAddFood(false);
+  };
+
+  // Delete a saved recipe
+  const deleteSavedRecipe = (recipeId) => {
+    if (window.confirm('Are you sure you want to delete this recipe?')) {
+      recipeService.deleteRecipe(recipeId);
+      loadSavedRecipes();
+    }
+  };
+
+  // Add AI meal suggestion directly to food diary
+  const addAIMealSuggestion = (suggestion, targetMealType) => {
+    const mealItem = {
+      id: Date.now(),
+      name: suggestion.name,
+      calories: suggestion.calories || suggestion.macros?.calories || 0,
+      protein: suggestion.protein || suggestion.macros?.protein || 0,
+      carbs: suggestion.carbs || suggestion.macros?.carbs || 0,
+      fat: suggestion.fat || suggestion.macros?.fat || 0,
+      fiber: suggestion.fiber || 0,
+      timestamp: new Date().toISOString(),
+      source: 'ai_suggestion',
+      description: suggestion.description || '',
+      instructions: suggestion.instructions || ''
+    };
+
+    setTodaysFoodLog(prev => ({
+      ...prev,
+      [targetMealType]: [...prev[targetMealType], mealItem]
+    }));
+
+    alert(`Added "${suggestion.name}" to ${targetMealType}!`);
+  };
+
+  // Save AI meal suggestion as a recipe for future use
+  const saveAISuggestionAsRecipe = (suggestion) => {
+    try {
+      const recipeData = recipeService.createFromAISuggestion(suggestion);
+      recipeService.saveRecipe(recipeData);
+      loadSavedRecipes();
+      alert('Meal saved as recipe!');
+    } catch (error) {
+      console.error('Error saving AI suggestion as recipe:', error);
+      alert('Failed to save recipe');
+    }
+  };
 
   // Check and reset food log if date has changed (handles midnight rollover)
   useEffect(() => {
@@ -602,8 +718,23 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
 
             {/* Meal subtotals */}
             {todaysFoodLog[mealType].length > 0 && (
-              <div className="mt-2 pt-2 border-t text-xs text-gray-600">
-                Subtotal: {todaysFoodLog[mealType].reduce((sum, f) => sum + f.calories, 0)} cal
+              <div className="mt-2 pt-2 border-t">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-600">
+                    Subtotal: {todaysFoodLog[mealType].reduce((sum, f) => sum + f.calories, 0)} cal
+                  </span>
+                  <button
+                    onClick={() => {
+                      setMealTypeToSave(mealType);
+                      setRecipeNameInput('');
+                      setShowSaveRecipeModal(true);
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200"
+                  >
+                    <Save className="w-3 h-3" />
+                    Save as Recipe
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -630,10 +761,10 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
               </div>
 
               {/* Tabs for different input methods */}
-              <div className="flex gap-2 mb-4 border-b">
+              <div className="flex gap-2 mb-4 border-b overflow-x-auto">
                 <button
                   onClick={() => setActiveTab('search')}
-                  className={`px-4 py-2 font-medium transition-colors ${activeTab === 'search'
+                  className={`px-4 py-2 font-medium transition-colors whitespace-nowrap ${activeTab === 'search'
                     ? 'text-blue-600 border-b-2 border-blue-600'
                     : 'text-gray-600 hover:text-gray-900'
                     }`}
@@ -641,8 +772,20 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
                   Search Foods
                 </button>
                 <button
+                  onClick={() => setActiveTab('saved')}
+                  className={`px-4 py-2 font-medium transition-colors whitespace-nowrap ${activeTab === 'saved'
+                    ? 'text-blue-600 border-b-2 border-blue-600'
+                    : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                >
+                  <div className="flex items-center gap-1">
+                    <BookOpen className="w-4 h-4" />
+                    Saved Recipes
+                  </div>
+                </button>
+                <button
                   onClick={() => setActiveTab('natural')}
-                  className={`px-4 py-2 font-medium transition-colors ${activeTab === 'natural'
+                  className={`px-4 py-2 font-medium transition-colors whitespace-nowrap ${activeTab === 'natural'
                     ? 'text-blue-600 border-b-2 border-blue-600'
                     : 'text-gray-600 hover:text-gray-900'
                     }`}
@@ -651,7 +794,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
                 </button>
                 <button
                   onClick={() => setActiveTab('recipe')}
-                  className={`px-4 py-2 font-medium transition-colors ${activeTab === 'recipe'
+                  className={`px-4 py-2 font-medium transition-colors whitespace-nowrap ${activeTab === 'recipe'
                     ? 'text-blue-600 border-b-2 border-blue-600'
                     : 'text-gray-600 hover:text-gray-900'
                     }`}
@@ -749,6 +892,70 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
                 </div>
               )}
 
+              {/* Saved Recipes Tab */}
+              {activeTab === 'saved' && (
+                <div>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Quick access to your saved meal combinations
+                  </p>
+                  
+                  {savedRecipes.length === 0 ? (
+                    <div className="text-center py-8">
+                      <BookOpen className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                      <p className="text-gray-500 mb-2">No saved recipes yet</p>
+                      <p className="text-sm text-gray-400">
+                        Add items to a meal, then click "Save as Recipe" to save your favorite combinations
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {savedRecipes.map(recipe => (
+                        <div key={recipe.id} className="border rounded-lg p-3 hover:bg-gray-50">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1">
+                              <h4 className="font-medium text-sm">{recipe.name}</h4>
+                              <p className="text-xs text-gray-500 capitalize">
+                                {recipe.mealType} • {recipe.items.length} item(s)
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => deleteSavedRecipe(recipe.id)}
+                              className="text-red-500 hover:text-red-700 p-1"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                          
+                          <div className="text-xs text-gray-600 mb-2">
+                            {recipe.totalMacros.calories} cal • P: {recipe.totalMacros.protein}g • C: {recipe.totalMacros.carbs}g • F: {recipe.totalMacros.fat}g
+                          </div>
+                          
+                          {/* Recipe items preview */}
+                          <div className="mb-2 text-xs text-gray-500">
+                            {recipe.items.map((item, idx) => (
+                              <div key={idx}>• {item.name}</div>
+                            ))}
+                          </div>
+                          
+                          <button
+                            onClick={() => addSavedRecipe(recipe, selectedMealType)}
+                            className="w-full mt-2 px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                          >
+                            Add to {selectedMealType}
+                          </button>
+                          
+                          {recipe.useCount > 0 && (
+                            <p className="text-xs text-gray-400 mt-1 text-center">
+                              Used {recipe.useCount} time{recipe.useCount !== 1 ? 's' : ''}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Natural Language Tab */}
               {activeTab === 'natural' && (
                 <div>
@@ -834,6 +1041,71 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
         </div>
       )}
 
+      {/* Save Recipe Modal */}
+      {showSaveRecipeModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Save as Recipe</h3>
+              <button
+                onClick={() => {
+                  setShowSaveRecipeModal(false);
+                  setRecipeNameInput('');
+                  setMealTypeToSave(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-sm text-gray-600 mb-4">
+              Save the items from your {mealTypeToSave} as a recipe for quick access later.
+            </p>
+
+            <input
+              type="text"
+              placeholder="Enter recipe name (e.g., 'My Morning Breakfast')"
+              value={recipeNameInput}
+              onChange={(e) => setRecipeNameInput(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 mb-4"
+              autoFocus
+            />
+
+            {mealTypeToSave && todaysFoodLog[mealTypeToSave] && (
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm font-medium mb-2">Items to save:</p>
+                <ul className="text-xs text-gray-600 space-y-1">
+                  {todaysFoodLog[mealTypeToSave].map((item, idx) => (
+                    <li key={idx}>• {item.name}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setShowSaveRecipeModal(false);
+                  setRecipeNameInput('');
+                  setMealTypeToSave(null);
+                }}
+                className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveCurrentMealAsRecipe}
+                disabled={!recipeNameInput.trim()}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                Save Recipe
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Remaining Macros Card */}
       <div className="bg-gradient-to-r from-blue-50 to-green-50 rounded-lg shadow-md p-6">
         <h3 className="text-lg font-semibold mb-4">Remaining for Today</h3>
@@ -885,7 +1157,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
                 <p className="text-sm text-gray-700">{suggestion.instructions}</p>
               </div>
 
-              <div className="flex gap-3 pt-3 border-t">
+              <div className="flex gap-3 pt-3 border-t mb-3">
                 <span className="text-xs bg-orange-50 text-orange-700 px-2 py-1 rounded">
                   {suggestion.calories} cal
                 </span>
@@ -899,6 +1171,24 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
                   {suggestion.fat}g fat
                 </span>
               </div>
+
+              {/* Action buttons for adding/saving */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => addAIMealSuggestion(suggestion, suggestion.meal)}
+                  className="flex-1 px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 flex items-center justify-center gap-1"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add to {suggestion.meal}
+                </button>
+                <button
+                  onClick={() => saveAISuggestionAsRecipe(suggestion)}
+                  className="px-3 py-2 bg-green-100 text-green-700 text-sm rounded hover:bg-green-200 flex items-center gap-1"
+                >
+                  <Save className="w-4 h-4" />
+                  Save
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -907,7 +1197,7 @@ const EnhancedNutritionTracker = ({ trainingData, foodLog, userPreferences, curr
         <div className="mt-4 p-4 bg-blue-50 rounded-lg">
           <p className="text-sm text-blue-900 mb-2">
             💡 <strong>Pro Tip:</strong> These meals are optimized to hit your remaining macros for today.
-            Click "Add Food" above to log any of these suggestions using the search or natural language features.
+            Click "Add to [meal]" to instantly add a suggestion, or "Save" to keep it in your recipe library for future use!
           </p>
         </div>
       </div>
