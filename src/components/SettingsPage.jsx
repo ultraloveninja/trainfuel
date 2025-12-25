@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, User, Target, Utensils, Calendar, Bell, Save, Check, X } from 'lucide-react';
+import { Settings, User, Target, Utensils, Calendar, Bell, Save, Check, X, Link as LinkIcon } from 'lucide-react';
+import intervalsService from '../services/intervalsService';
 
 const SettingsPage = ({ onSave }) => {
   const [settings, setSettings] = useState({
@@ -46,12 +47,28 @@ const SettingsPage = ({ onSave }) => {
 
   const [saveStatus, setSaveStatus] = useState('');
   const [activeTab, setActiveTab] = useState('profile');
+  const [intervalsConnected, setIntervalsConnected] = useState(false);
+  const [intervalsProfile, setIntervalsProfile] = useState(null);
+  const [showIntervalsSetup, setShowIntervalsSetup] = useState(false);
+  const [apiKey, setApiKey] = useState('');
+  const [athleteId, setAthleteId] = useState('');
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
 
   // Load saved settings on mount
   useEffect(() => {
     const savedSettings = localStorage.getItem('trainfuelSettings');
     if (savedSettings) {
       setSettings(JSON.parse(savedSettings));
+    }
+
+    // Check intervals.icu connection status
+    if (intervalsService.isConfigured()) {
+      setIntervalsConnected(true);
+      const storedProfile = localStorage.getItem('intervals_athlete_profile');
+      if (storedProfile) {
+        setIntervalsProfile(JSON.parse(storedProfile));
+      }
     }
   }, []);
 
@@ -112,6 +129,53 @@ const SettingsPage = ({ onSave }) => {
     'Milk'
   ];
 
+  const handleIntervalsConnect = async () => {
+    setConnectionError(null);
+    setIsConnecting(true);
+
+    try {
+      // Save credentials
+      intervalsService.setCredentials(apiKey, athleteId);
+
+      // Test the connection
+      const isValid = await intervalsService.testConnection();
+
+      if (isValid) {
+        // Fetch athlete profile
+        const profile = await intervalsService.getAthleteProfile();
+        setIntervalsProfile(profile);
+        setIntervalsConnected(true);
+        setShowIntervalsSetup(false);
+
+        // Auto-populate settings from intervals.icu
+        if (profile.weight) {
+          updateSettings('profile', 'weight', Math.round(profile.weight * 2.20462)); // kg to lbs
+        }
+        if (profile.name && !settings.profile.name) {
+          updateSettings('profile', 'name', profile.name);
+        }
+
+        // Save updated settings
+        setTimeout(handleSave, 100);
+      } else {
+        throw new Error('Invalid credentials');
+      }
+    } catch (err) {
+      setConnectionError(err.message || 'Failed to connect');
+      intervalsService.clearCredentials();
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleIntervalsDisconnect = () => {
+    if (window.confirm('Are you sure you want to disconnect from Intervals.icu?')) {
+      intervalsService.clearCredentials();
+      setIntervalsConnected(false);
+      setIntervalsProfile(null);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-6">
       <div className="bg-white rounded-lg shadow-lg">
@@ -137,6 +201,7 @@ const SettingsPage = ({ onSave }) => {
         <div className="border-b">
           <div className="flex">
             {[
+              { id: 'integrations', label: 'Integrations', icon: LinkIcon },
               { id: 'profile', label: 'Profile', icon: User },
               { id: 'goals', label: 'Goals', icon: Target },
               { id: 'food', label: 'Food Preferences', icon: Utensils },
@@ -161,6 +226,144 @@ const SettingsPage = ({ onSave }) => {
 
         {/* Content */}
         <div className="p-6">
+          {/* Integrations Tab */}
+          {activeTab === 'integrations' && (
+            <div className="space-y-6">
+              <h2 className="text-lg font-semibold mb-4">Data Integrations</h2>
+
+              {/* Intervals.icu Section */}
+              <div className="border rounded-lg p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-semibold">Intervals.icu</h3>
+                    <p className="text-sm text-gray-600">Connect your Intervals.icu account for comprehensive training data</p>
+                  </div>
+                  {intervalsConnected && (
+                    <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium">
+                      Connected
+                    </span>
+                  )}
+                </div>
+
+                {intervalsConnected && intervalsProfile ? (
+                  <div className="space-y-4">
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="text-gray-600">Name:</span>
+                          <span className="ml-2 font-medium">{intervalsProfile.name}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Athlete ID:</span>
+                          <span className="ml-2 font-medium">{intervalsProfile.id}</span>
+                        </div>
+                        {intervalsProfile.ftp && (
+                          <div>
+                            <span className="text-gray-600">FTP:</span>
+                            <span className="ml-2 font-medium">{intervalsProfile.ftp}W</span>
+                          </div>
+                        )}
+                        {intervalsProfile.weight && (
+                          <div>
+                            <span className="text-gray-600">Weight:</span>
+                            <span className="ml-2 font-medium">{intervalsProfile.weight}kg ({intervalsProfile.weightInLbs}lbs)</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleIntervalsDisconnect}
+                      className="text-red-600 hover:text-red-800 text-sm font-medium"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {!showIntervalsSetup ? (
+                      <button
+                        onClick={() => setShowIntervalsSetup(true)}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+                      >
+                        Connect to Intervals.icu
+                      </button>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                          <h4 className="font-semibold text-blue-900 mb-2">How to get your credentials:</h4>
+                          <ol className="list-decimal list-inside space-y-1 text-sm text-blue-800">
+                            <li>Go to <a href="https://intervals.icu/settings" target="_blank" rel="noopener noreferrer" className="underline">intervals.icu/settings</a></li>
+                            <li>Scroll down to "Developer Settings"</li>
+                            <li>Click "Generate API Key" and copy it</li>
+                            <li>Copy your Athlete ID (starts with "i")</li>
+                          </ol>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            API Key
+                          </label>
+                          <input
+                            type="password"
+                            value={apiKey}
+                            onChange={(e) => setApiKey(e.target.value)}
+                            placeholder="Enter your API key"
+                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Athlete ID
+                          </label>
+                          <input
+                            type="text"
+                            value={athleteId}
+                            onChange={(e) => setAthleteId(e.target.value)}
+                            placeholder="e.g., i398037"
+                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+
+                        {connectionError && (
+                          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                            {connectionError}
+                          </div>
+                        )}
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleIntervalsConnect}
+                            disabled={isConnecting || !apiKey || !athleteId}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {isConnecting ? 'Connecting...' : 'Connect'}
+                          </button>
+                          <button
+                            onClick={() => setShowIntervalsSetup(false)}
+                            className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-4 pt-4 border-t">
+                      <p className="text-sm text-gray-600 mb-2"><strong>Why Intervals.icu?</strong></p>
+                      <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
+                        <li>Real TSS data from power meters (not estimates)</li>
+                        <li>Comprehensive Garmin data integration</li>
+                        <li>Advanced training metrics (CTL, ATL, TSB)</li>
+                        <li>Wellness tracking (HRV, sleep, weight)</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Profile Tab */}
           {activeTab === 'profile' && (
             <div className="space-y-4">
@@ -383,8 +586,8 @@ const SettingsPage = ({ onSave }) => {
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <p className="text-sm text-blue-900">
-                  <strong>Nick Chase Nutrition Principle:</strong> Focus on liquid nutrition during training, 
-                  protein timing around workouts, and vegetable-heavy dinners for optimal performance and recovery.
+                  <strong>Smart Nutrition Strategy:</strong> Carb cycle based on training load, time protein around workouts
+                  for recovery, and include anti-inflammatory foods during hard training blocks.
                 </p>
               </div>
             </div>

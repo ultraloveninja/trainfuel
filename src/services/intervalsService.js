@@ -5,41 +5,76 @@
 import axios from 'axios';
 
 const INTERVALS_BASE_URL = 'https://intervals.icu/api/v1';
-const API_KEY = process.env.REACT_APP_INTERVALS_API_KEY;
-const ATHLETE_ID = process.env.REACT_APP_INTERVALS_ATHLETE_ID; // Your ID: i398037
 
 class IntervalsService {
   constructor() {
-    this.apiKey = API_KEY;
-    this.athleteId = ATHLETE_ID;
-
     // Cache to reduce API calls
     this.cache = new Map();
     this.CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-    console.log('IntervalsService initialized:', {
-      hasApiKey: !!this.apiKey,
-      athleteId: this.athleteId
-    });
+    console.log('IntervalsService initialized');
+  }
+
+  /**
+   * Get credentials from localStorage (user-specific)
+   * Falls back to environment variables for backwards compatibility
+   */
+  getCredentials() {
+    const stored = localStorage.getItem('intervals_credentials');
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        console.error('Failed to parse stored credentials:', e);
+      }
+    }
+
+    // Fallback to environment variables
+    return {
+      apiKey: process.env.REACT_APP_INTERVALS_API_KEY,
+      athleteId: process.env.REACT_APP_INTERVALS_ATHLETE_ID
+    };
+  }
+
+  /**
+   * Set credentials in localStorage
+   */
+  setCredentials(apiKey, athleteId) {
+    const credentials = { apiKey, athleteId };
+    localStorage.setItem('intervals_credentials', JSON.stringify(credentials));
+    this.clearCache(); // Clear cache when credentials change
+    console.log('Intervals.icu credentials saved');
+  }
+
+  /**
+   * Clear stored credentials
+   */
+  clearCredentials() {
+    localStorage.removeItem('intervals_credentials');
+    localStorage.removeItem('intervals_athlete_profile');
+    this.clearCache();
+    console.log('Intervals.icu credentials cleared');
   }
 
   /**
    * Check if service is configured
    */
   isConfigured() {
-    return !!(this.apiKey && this.athleteId);
+    const { apiKey, athleteId } = this.getCredentials();
+    return !!(apiKey && athleteId);
   }
 
   /**
    * Get authentication headers for API requests
    */
   getAuthHeaders() {
-    if (!this.apiKey) {
+    const { apiKey } = this.getCredentials();
+    if (!apiKey) {
       throw new Error('Intervals.icu API key not configured');
     }
 
     return {
-      'Authorization': `Basic ${btoa(`API_KEY:${this.apiKey}`)}`,
+      'Authorization': `Basic ${btoa(`API_KEY:${apiKey}`)}`,
       'Content-Type': 'application/json'
     };
   }
@@ -91,7 +126,49 @@ class IntervalsService {
    * Get athlete profile
    */
   async getAthlete() {
-    return this.makeRequest(`/athlete/${this.athleteId}`);
+    const { athleteId } = this.getCredentials();
+    return this.makeRequest(`/athlete/${athleteId}`);
+  }
+
+  /**
+   * Get and cache athlete profile with extended data
+   */
+  async getAthleteProfile() {
+    const profile = await this.getAthlete();
+
+    // Cache the profile for app use
+    localStorage.setItem('intervals_athlete_profile', JSON.stringify(profile));
+
+    return {
+      // Personal info
+      id: profile.id,
+      name: profile.name,
+      email: profile.email,
+
+      // Physical stats
+      weight: profile.weight,
+      weightInLbs: profile.weight ? Math.round(profile.weight * 2.20462) : null,
+
+      // Training thresholds
+      ftp: profile.ftp,
+      ftpWatts: profile.ftpWatts,
+      maxHR: profile.maxHR,
+      restingHR: profile.restingHR,
+      ltHR: profile.ltHR,
+
+      // Zones
+      powerZones: profile.power_zones,
+      hrZones: profile.hr_zones,
+      paceZones: profile.pace_zones,
+
+      // Other useful data
+      sex: profile.sex,
+      dob: profile.dob, // Date of birth
+      tss_per_hour: profile.tss_per_hour,
+
+      // Raw profile for future use
+      raw: profile
+    };
   }
 
   /**
@@ -100,6 +177,8 @@ class IntervalsService {
    * @param {string} newest - ISO date string (e.g., '2024-12-02')
    */
   async getActivities(oldest, newest) {
+    const { athleteId } = this.getCredentials();
+
     if (!oldest || !newest) {
       // Default to last 30 days
       const end = new Date();
@@ -110,7 +189,7 @@ class IntervalsService {
       newest = end.toISOString().split('T')[0];
     }
 
-    return this.makeRequest(`/athlete/${this.athleteId}/activities`, {
+    return this.makeRequest(`/athlete/${athleteId}/activities`, {
       params: { oldest, newest }
     });
   }
@@ -203,6 +282,8 @@ class IntervalsService {
    * @param {string} newest - ISO date string
    */
   async getWellness(oldest, newest) {
+    const { athleteId } = this.getCredentials();
+
     if (!oldest || !newest) {
       // Default to last 90 days
       const end = new Date();
@@ -213,7 +294,7 @@ class IntervalsService {
       newest = end.toISOString().split('T')[0];
     }
 
-    return this.makeRequest(`/athlete/${this.athleteId}/wellness`, {
+    return this.makeRequest(`/athlete/${athleteId}/wellness`, {
       params: { oldest, newest }
     });
   }

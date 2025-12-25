@@ -109,20 +109,26 @@ class NutritionService {
       fat: Math.max(0, targetMacros.fat - consumedToday.fat)
     };
 
-    return `You are a nutrition coach following Nick Chase's training and nutrition principles. Generate meal suggestions for an endurance athlete.
+    return `You are a data-driven nutrition coach creating personalized meal plans for endurance athletes using real training metrics.
 
 ATHLETE PROFILE:
 - Age: ${athlete?.age || 46}
-- Weight: ${athlete?.weight || 204} lbs
+- Weight: ${athlete?.weight || athlete?.weightInLbs || 204} lbs
 - Height: ${athlete?.height || "6'2"}
 - Goal: ${goals?.primaryGoal || 'performance'}
+- FTP: ${athlete?.ftp || 'N/A'}W
+- Max HR: ${athlete?.maxHR || 'N/A'}
+
+TRAINING METRICS:
+- Current Fitness (CTL): ${trainingData?.fitness?.ctl || 'N/A'}
+- Training Stress Balance (TSB): ${trainingData?.fitness?.tsb || 'N/A'}
+- Weekly TSS: ${trainingData?.weeklyTSS || 'N/A'}
 
 TODAY'S TRAINING:
 ${workoutSummary}
 
-Training Load: ${trainingData?.trainingPhase || 'moderate'}
-Weekly TSS: ${trainingData?.weeklyTSS || 'N/A'}
-Traffic Light: ${trainingData?.trafficLight || 'yellow'} (carb needs)
+Training Phase: ${trainingData?.trainingPhase || 'base'}
+Carb Strategy: ${trainingData?.trafficLight || 'yellow'} light (adjust carbs accordingly)
 
 TARGET MACROS FOR TODAY:
 - Calories: ${targetMacros.calories}
@@ -147,66 +153,45 @@ PREFERENCES:
 - Restrictions: ${preferences?.restrictions?.join(', ') || 'none'}
 - Allergies: ${preferences?.allergies?.join(', ') || 'none'}
 
-NICK CHASE PRINCIPLES TO FOLLOW:
-1. Liquid nutrition during training (200-300 cal/hour for 60+ min workouts)
-2. Protein timing: within 30 min post-workout
-3. Vegetable-heavy dinners for recovery
-4. Whole foods focus with strategic supplementation
-5. Adjust carbs based on training load (traffic light system)
+NUTRITION PRINCIPLES (DATA-DRIVEN):
+1. Carb cycling based on TSS: High TSS (>100) = high carb, Low TSS (<50) = moderate carb
+2. Protein timing: 20-30g within 30min post-workout for recovery
+3. Anti-inflammatory foods when TSB is negative (hard training block)
+4. Micronutrient-dense foods to support adaptation and immune function
+5. Hydration based on training duration and intensity
 
-MEAL TYPE GUIDELINES - CRITICAL FOR APPROPRIATE SUGGESTIONS:
+MEAL TYPE GUIDELINES:
 
-BREAKFAST must be:
-- Light, easily digestible, liquid-focused
-- Quick prep (under 5 minutes ideal)
-- Examples: Coffee protein shake, smoothie bowl, protein oats, Greek yogurt
-- ABSOLUTELY NO: Grilled chicken, salmon, "power bowls", heavy starches, full meals, sweet potatoes, baked chicken
+BREAKFAST:
+- Quick, easily digestible (5-10min prep max)
+- Moderate carbs unless high TSS training ahead
+- Examples: Protein smoothie, overnight oats, Greek yogurt bowl
+- NEVER: Heavy proteins like grilled chicken, salmon, power bowls
 
-LUNCH should be:
-- Balanced protein + vegetables + grain
-- Meal prep friendly (20-30 minute prep or pre-made)
-- Examples: Chicken breast + quinoa + vegetables, turkey bowl with rice
-- Portable for work/training
+LUNCH:
+- Balanced macros: protein + complex carbs + vegetables
+- Meal-prep friendly (can be made ahead)
+- Examples: Chicken + rice + veggies, turkey quinoa bowl, salmon salad
 
-DINNER should be:
-- Vegetable-heavy (2-3 cups vegetables - this is critical!)
-- Lean protein (6oz chicken, fish, or plant-based)
-- Minimal starch
-- Recovery focused
-- Examples: Salmon + roasted vegetables, chicken + large salad with sweet potato
+DINNER:
+- Vegetable-heavy (2+ cups vegetables)
+- Lean protein for recovery
+- Carbs based on today's training load
+- Examples: Grilled fish + roasted vegetables, chicken + large salad
 
-SNACKS should be:
-- Quick, portable, no cooking
+SNACKS:
+- Quick, portable, no cooking required
 - 200-300 calories
-- Examples: Rice cakes + avocado, Greek yogurt + berries, apple + almond butter
-
-CRITICAL RESTRICTIONS FOR BREAKFAST:
-You MUST NOT suggest any of these for breakfast:
-- Grilled chicken
-- Baked chicken
-- Chicken breast (any preparation)
-- Salmon
-- Any fish
-- Power bowls
-- Meal prep bowls
-- Sweet potato
-- Any meal requiring cooking or more than 5 minutes
-
-ONLY suggest for breakfast:
-- Protein shakes (especially coffee protein shake)
-- Smoothie bowls
-- Overnight oats or quick oats
-- Greek yogurt bowls
-- Fruit + protein combinations
-- Liquid-focused options
+- Examples: Greek yogurt + berries, rice cakes + nut butter, protein shake
 
 Generate 3-4 specific meal suggestions that:
-- Hit the REMAINING macros needed for today (not total - they've already eaten some!)
-- Are STRICTLY APPROPRIATE for their meal type (breakfast = ONLY shakes/smoothies/oats/yogurt, NEVER grilled meats!)
-- Align with the training load and traffic light color
-- Include practical cooking instructions
-- Follow Nick Chase principles
-- Consider what they've ALREADY eaten today (avoid repetition)
+- Hit the REMAINING macros needed for today (account for what's already consumed)
+- Are meal-type appropriate (breakfast = quick/light, dinner = veggie-heavy)
+- Optimize carbs based on TSS and TSB (high load = higher carbs for recovery)
+- Include recovery-focused nutrients if TSB is negative
+- Provide practical cooking instructions
+- Consider dietary preferences and restrictions
+- Avoid repetition from recent food log
 
 CRITICAL: Respond ONLY with valid JSON in this exact format:
 {
@@ -290,7 +275,7 @@ CRITICAL: Respond ONLY with valid JSON in this exact format:
         {
           name: "Coffee Protein Shake",
           meal: "breakfast",
-          description: "Quick, liquid-focused breakfast following Nick Chase principles",
+          description: "Quick, easily digestible breakfast to fuel your training",
           ingredients: ["2 shots espresso", "2 scoops protein powder", "1 cup almond milk", "ice"],
           instructions: "Blend espresso, protein powder, almond milk, and ice until smooth.",
           macros: { calories: 228, protein: 40, carbs: 8, fat: 4 },

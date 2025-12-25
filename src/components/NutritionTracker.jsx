@@ -510,14 +510,14 @@ const NutritionTracker = ({ trainingData, foodLog, userPreferences, currentWeigh
         </div>
       )}
 
-      {/* Nick Chase Tips */}
+      {/* Data-Driven Nutrition Tips */}
       <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-4 border border-purple-200">
-        <h4 className="font-semibold text-purple-900 mb-2">Nick Chase Nutrition Tips</h4>
+        <h4 className="font-semibold text-purple-900 mb-2">Smart Nutrition Tips</h4>
         <ul className="text-sm text-purple-700 space-y-1">
-          <li>• Track everything - data drives improvement</li>
-          <li>• Liquid nutrition during training sessions</li>
-          <li>• Protein within 30 minutes post-workout</li>
-          <li>• Vegetable-heavy dinners for recovery</li>
+          <li>• Carb cycle based on TSS: High load days = higher carbs</li>
+          <li>• Protein within 30min post-workout aids recovery</li>
+          <li>• Hydrate: 30-60g carbs/hour for sessions over 90min</li>
+          <li>• Anti-inflammatory foods when TSB is negative</li>
         </ul>
       </div>
     </div>

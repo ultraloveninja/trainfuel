@@ -1,7 +1,7 @@
 // src/components/WorkoutGenerator.jsx
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, Activity, Target, Zap, Loader, ChevronRight, TrendingUp, Brain, AlertCircle } from 'lucide-react';
-import { WORKOUT_TEMPLATES, NICK_CHASE_PRINCIPLES } from '../data/workouts';
+import { WORKOUT_TEMPLATES } from '../data/workouts';
 import { NUTRITION_PRINCIPLES } from '../data/nutrition';
 
 const WorkoutGenerator = ({ 
@@ -86,7 +86,7 @@ const WorkoutGenerator = ({
   const buildEnhancedWorkoutPrompt = (data) => {
     const { workout, fatigue, isInSeason, stravaData, upcomingEvents, userSettings } = data;
     
-    return `You are an expert triathlon coach following Nick Chase's training methodology. Generate personalized workout recommendations based on:
+    return `You are a data-driven triathlon coach (similar to TriDot) using real training metrics. Generate personalized workout recommendations based on:
 
 ATHLETE PROFILE:
 - Current fatigue: ${fatigue}
@@ -100,16 +100,16 @@ ${stravaData?.recentActivities ? stravaData.recentActivities.map(act =>
 ).join('\n') : 'No recent activities'}
 
 UPCOMING EVENTS:
-${upcomingEvents?.length > 0 ? upcomingEvents.map(e => 
+${upcomingEvents?.length > 0 ? upcomingEvents.map(e =>
   `- ${e.name}: ${e.date} (${e.type})`
 ).join('\n') : 'No upcoming events'}
 
-NICK CHASE PRINCIPLES TO FOLLOW:
-1. Quality over quantity - focus on purposeful training
-2. Proper recovery between hard sessions
-3. Sport-specific strength work
-4. Mental preparation alongside physical
-5. Nutrition timing around workouts
+TRAINING PRINCIPLES:
+1. Data-driven intensity - use metrics to guide load
+2. Optimize recovery between hard sessions based on HRV/TSB
+3. Sport-specific strength and technique work
+4. Mental preparation alongside physical training
+5. Nutrition timing optimized around workouts
 6. Progressive overload with adequate recovery
 
 Generate a JSON response with this EXACT structure:
@@ -145,7 +145,7 @@ Generate a JSON response with this EXACT structure:
     "mentalFocus": "Mental preparation"
   },
   "weeklyTips": [
-    "Tip 1 based on Nick Chase methodology",
+    "Tip 1 based on current training metrics",
     "Tip 2 for this athlete's current phase",
     "Tip 3 for recovery and adaptation"
   ]

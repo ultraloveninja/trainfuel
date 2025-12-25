@@ -54,55 +54,100 @@ class ClaudeService {
   }
 
   buildWorkoutPrompt(data) {
-    return `Based on Nick Chase's training methods, generate 3 workout suggestions for:
-      
-      Current workout: ${data.workout.type} ${data.workout.discipline}
-      Fatigue level: ${data.fatigue}
-      Season: ${data.isInSeason ? 'In-season' : 'Off-season'}
-      Recent activities: ${data.recentActivities || 0} in last 7 days
-      
-      Follow Nick's principles:
-      - Liquid nutrition during long sessions
-      - Focus on consistency over intensity
-      - Sports psychology foundation
-      - Gradual adaptation
-      
-      Respond with a JSON array of 3 suggestions, each with:
-      {
-        "title": "short title",
-        "description": "detailed description",
-        "duration": "time range",
-        "nutrition": "fueling strategy"
-      }
-      
-      ONLY respond with valid JSON, no other text.`;
+    return `You are an AI training coach using data-driven insights (similar to TriDot) to create personalized workout recommendations.
+
+ATHLETE DATA:
+- Current Fitness (CTL): ${data.fitness?.ctl || 'N/A'}
+- Acute Training Load (ATL): ${data.fitness?.atl || 'N/A'}
+- Training Stress Balance (TSB): ${data.fitness?.tsb || 'N/A'}
+- Recent HRV: ${data.wellness?.hrv || 'N/A'}
+- Sleep Quality: ${data.wellness?.sleep || 'N/A'}
+- Weight: ${data.profile?.weight || 'N/A'}
+- FTP: ${data.profile?.ftp || 'N/A'}W
+- Max HR: ${data.profile?.maxHR || 'N/A'}
+
+RECENT TRAINING:
+- Last 7 days activities: ${data.recentActivities || 0}
+- Last workout TSS: ${data.lastWorkoutTSS || 'N/A'}
+- Training phase: ${data.trainingPhase || 'Base'}
+- Days until race: ${data.daysToRace || 'N/A'}
+
+CONSTRAINTS:
+- Available time: ${data.availableTime || '60'} minutes
+- Preferred discipline: ${data.preferredDiscipline || 'Any'}
+- Equipment: ${data.equipment || 'All available'}
+
+GENERATE 3 WORKOUT SUGGESTIONS that:
+1. Optimize training load based on TSB (if TSB < -20, focus on recovery; if TSB > 5, increase intensity)
+2. Consider HRV and sleep for intensity decisions (low HRV = easier day)
+3. Periodize towards race date if provided
+4. Balance swim/bike/run volume for triathlon training
+5. Include specific power/pace/HR zones based on athlete thresholds
+6. Provide clear fueling strategy for each workout
+
+Respond with a JSON array of 3 suggestions:
+{
+  "title": "workout name",
+  "description": "detailed description with zones",
+  "discipline": "swim/bike/run/brick",
+  "duration": "X minutes",
+  "targetTSS": X,
+  "intensity": "recovery/endurance/tempo/threshold/VO2",
+  "zones": "specific HR or power zones",
+  "nutrition": "fueling strategy",
+  "reasoning": "why this workout based on data"
+}
+
+ONLY respond with valid JSON, no other text.`;
   }
 
   buildMealPrompt(data) {
-    return `Based on Nick Chase's nutrition principles, suggest 3 specific meals for:
-      
-      Activity level: ${data.activityLevel}
-      Daily macros: Protein ${data.macros.protein}g, Carbs ${data.macros.carbs}g, Fat ${data.macros.fat}g
-      Dietary preferences: ${data.preferences?.join(', ') || 'None'}
-      Recent foods: ${data.recentFoods?.join(', ') || 'Not tracked'}
-      
-      Follow Nick's principles:
-      - Liquid nutrition during training
-      - Protein timing around workouts
-      - Vegetable-heavy dinners
-      - Whole foods focus
-      
-      Respond with a JSON array of 3 meal suggestions:
-      {
-        "meal": "breakfast/lunch/dinner",
-        "name": "meal name",
-        "ingredients": ["list of ingredients"],
-        "macros": {"protein": X, "carbs": Y, "fat": Z, "calories": Total},
-        "prepTime": "X minutes",
-        "instructions": "brief cooking instructions"
-      }
-      
-      ONLY respond with valid JSON, no other text.`;
+    return `You are an AI nutrition coach creating data-driven meal plans for endurance athletes.
+
+TRAINING DATA:
+- Today's planned TSS: ${data.todayTSS || 0}
+- Training intensity: ${data.trainingIntensity || 'moderate'}
+- Workout timing: ${data.workoutTime || 'morning'}
+- Training phase: ${data.trainingPhase || 'base'}
+
+ATHLETE PROFILE:
+- Weight: ${data.profile?.weight || 'N/A'}lbs
+- Goal: ${data.goal || 'performance'}
+- Daily macro targets: Protein ${data.macros.protein}g, Carbs ${data.macros.carbs}g, Fat ${data.macros.fat}g
+- Dietary preferences: ${data.preferences?.join(', ') || 'None'}
+- Allergies: ${data.allergies?.join(', ') || 'None'}
+
+RECOVERY INDICATORS:
+- HRV: ${data.wellness?.hrv || 'N/A'}
+- Sleep: ${data.wellness?.sleep || 'N/A'} hours
+- TSB: ${data.fitness?.tsb || 'N/A'}
+
+NUTRITION STRATEGY:
+- Carb cycling based on training load (high TSS = high carb, low TSS = lower carb)
+- Protein timing around workouts for recovery
+- Anti-inflammatory foods when TSB is negative (hard training block)
+- Nutrient-dense foods to support adaptation
+
+GENERATE 3 MEAL SUGGESTIONS:
+1. Optimize carbs based on today's training (TSS > 100 = high carb, TSS < 50 = moderate carb)
+2. Include recovery-focused nutrients if TSB < -15
+3. Consider workout timing for meal placement
+4. Align with dietary preferences and restrictions
+5. Provide practical, athlete-friendly meals
+
+Respond with a JSON array of 3 meal suggestions:
+{
+  "meal": "breakfast/lunch/dinner/snack",
+  "name": "meal name",
+  "ingredients": ["list of ingredients with amounts"],
+  "macros": {"protein": X, "carbs": Y, "fat": Z, "calories": Total},
+  "prepTime": "X minutes",
+  "instructions": "brief cooking instructions",
+  "timing": "when to eat relative to workout",
+  "benefits": "why this meal for today's training"
+}
+
+ONLY respond with valid JSON, no other text.`;
   }
 
   parseWorkoutResponse(response) {
@@ -148,22 +193,37 @@ class ClaudeService {
   getFallbackWorkouts() {
     return [
       {
-        title: "Fasted Morning Run",
-        description: "Easy Zone 2 run following Nick's fasted training approach for fat adaptation",
-        duration: "45-60 min",
-        nutrition: "Coffee protein shake post-workout within 30 minutes"
+        title: "Endurance Base Ride",
+        description: "Zone 2 ride focusing on aerobic development. Keep power at 56-75% FTP (140-187W if FTP is 250W). HR should be 60-75% max.",
+        discipline: "bike",
+        duration: "90 minutes",
+        targetTSS: 90,
+        intensity: "endurance",
+        zones: "Zone 2: 140-187W or HR 120-150",
+        nutrition: "30-60g carbs/hour from sports drink. Start fueling at 45min mark.",
+        reasoning: "Building aerobic base with sustainable intensity for long-term fitness gains"
       },
       {
-        title: "Tempo Bike Session",
-        description: "Sustained effort at race pace with focus on aerodynamic position",
-        duration: "75-90 min",
-        nutrition: "Diluted sports drink (50/50 with water) every 20 min"
+        title: "Tempo Run with Intervals",
+        description: "Warm up 15min easy, then 3x10min at threshold pace with 3min recovery jog. Cool down 10min.",
+        discipline: "run",
+        duration: "60 minutes",
+        targetTSS: 75,
+        intensity: "tempo",
+        zones: "Threshold: 85-95% max HR or ~7:30/mile pace",
+        nutrition: "Hydration only for <90min. Post-run protein within 30min.",
+        reasoning: "Improves lactate threshold and race-pace sustainability"
       },
       {
-        title: "Brick Workout",
-        description: "Bike 60 min at moderate pace, transition to 20 min run at race pace",
-        duration: "90 min total",
-        nutrition: "200-250 cal/hour from liquid sources, electrolytes throughout"
+        title: "Recovery Swim",
+        description: "Easy continuous swim with technique focus. Include drills for form improvement.",
+        discipline: "swim",
+        duration: "45 minutes",
+        targetTSS: 30,
+        intensity: "recovery",
+        zones: "Zone 1-2: RPE 3-4 out of 10",
+        nutrition: "Hydrate before/after. No intra-workout fuel needed.",
+        reasoning: "Active recovery promotes blood flow without adding training stress"
       }
     ];
   }

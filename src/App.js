@@ -4,10 +4,8 @@ import { Activity, Calendar, Download, RefreshCw, Settings, AlertCircle, Zap, Br
 
 
 // Import services
-import stravaService from './services/stravaService';
 import nutritionService from './services/nutritionService';
 import intervalsService from './services/intervalsService';
-import activityMerger from './services/activityMerger';
 
 
 
@@ -21,7 +19,7 @@ import TrafficLightIndicator from './components/TrafficLightIndicator';
 import FitnessWidget from './components/FitnessWidget';
 
 // Import existing components
-import StravaAuth from './components/StravaAuth';
+import IntervalsAuth from './components/IntervalsAuth';
 import DashboardView from './components/DashboardView';
 import CalendarView from './components/CalendarView';
 import AddEventModal from './components/AddEventModal';
@@ -33,13 +31,12 @@ import { loadEventsFromStorage, saveEventsToStorage } from './utils/storageUtils
 
 const App = () => {
   // Core state
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   const [athlete, setAthlete] = useState(null);
   const [activities, setActivities] = useState([]);
   const [trainingData, setTrainingData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [intervalsConnected, setIntervalsConnected] = useState(false);
   const [fitnessMetrics, setFitnessMetrics] = useState(null);
 
   // Add rate limiting refs
@@ -230,62 +227,42 @@ const App = () => {
     saveEventsToStorage(upcomingEvents);
   }, [upcomingEvents]);
 
-  // Check authentication on mount
+  // Check intervals.icu connection on mount
   useEffect(() => {
-    const checkAuth = async () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const code = urlParams.get('code');
-
-      if (code) {
-        // Handle OAuth callback
+    const checkConnection = async () => {
+      if (intervalsService.isConfigured()) {
         setLoading(true);
         try {
-          const result = await stravaService.exchangeToken(code);
-          setAthlete(result.athlete);
-          setIsAuthenticated(true);
-          window.history.replaceState({}, document.title, window.location.pathname);
+          // Fetch athlete profile
+          const storedProfile = localStorage.getItem('intervals_athlete_profile');
+          if (storedProfile) {
+            const profile = JSON.parse(storedProfile);
+            setAthlete(profile);
+            setIsConnected(true);
+          } else {
+            // Fetch fresh profile
+            const profile = await intervalsService.getAthleteProfile();
+            setAthlete(profile);
+            setIsConnected(true);
+          }
         } catch (err) {
-          setError('Failed to authenticate with Strava');
-          console.error('Auth error:', err);
+          console.error('Failed to fetch athlete profile:', err);
+          setError('Failed to connect to Intervals.icu. Please check your credentials in Settings.');
         } finally {
           setLoading(false);
-        }
-      } else {
-        // Check if already authenticated
-        const authenticated = stravaService.isAuthenticated();
-        console.log('Auth check on mount:', authenticated);
-        if (authenticated) {
-          const savedAthlete = localStorage.getItem('strava_athlete');
-          if (savedAthlete) {
-            const athleteData = JSON.parse(savedAthlete);
-            console.log('Setting athlete data:', athleteData);
-            setAthlete(athleteData);
-            setIsAuthenticated(true);
-          } else {
-            console.log('No saved athlete data, fetching...');
-            // Fetch athlete data if not saved
-            try {
-              const athleteData = await stravaService.getAthlete();
-              setAthlete(athleteData);
-              setIsAuthenticated(true);
-              localStorage.setItem('strava_athlete', JSON.stringify(athleteData));
-            } catch (err) {
-              console.error('Failed to fetch athlete:', err);
-            }
-          }
         }
       }
     };
 
-    checkAuth();
+    checkConnection();
   }, []);
 
-  // Fetch activities when authenticated
+  // Fetch activities when connected
   useEffect(() => {
-    if (isAuthenticated && athlete) {
+    if (isConnected && athlete) {
       fetchActivities();
     }
-  }, [isAuthenticated, athlete]);
+  }, [isConnected, athlete]);
 
   // Generate AI recommendations when data is available (with rate limiting)
   useEffect(() => {
@@ -299,37 +276,25 @@ const App = () => {
     }
   }, []); // Empty dependency array - only run once on mount
 
-  // Fetch Strava activities
+  // Fetch activities from intervals.icu
   const fetchActivities = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      // Fetch from both sources in parallel
-      const [stravaActivities, intervalsData] = await Promise.all([
-        stravaService.getActivities(1, 30),
-        intervalsService.isConfigured()
-          ? intervalsService.getTrainingData()
-          : Promise.resolve({ activities: [], fitness: null })
-      ]);
+      if (!intervalsService.isConfigured()) {
+        throw new Error('Intervals.icu not configured. Please add your credentials in Settings.');
+      }
 
-      // Merge activities from both sources
-      const mergedActivities = activityMerger.mergeActivities(
-        stravaActivities,
-        intervalsData.activities
-      );
+      // Fetch training data from intervals.icu
+      const intervalsData = await intervalsService.getTrainingData();
 
-      console.log('Activity merge stats:',
-        activityMerger.getMergeStats(mergedActivities)
-      );
-
-      setActivities(mergedActivities);
+      setActivities(intervalsData.activities);
       setFitnessMetrics(intervalsData.fitness);
-      setIntervalsConnected(intervalsService.isConfigured());
 
       // Process activities for training data
-      const processed = processStravaActivities(mergedActivities, {
-        weight: userSettings.profile.weight,
+      const processed = processStravaActivities(intervalsData.activities, {
+        weight: userSettings.profile.weight || athlete?.weight,
         age: userSettings.profile.age,
         gender: userSettings.profile.gender,
         primaryGoal: userSettings.goals.primaryGoal
@@ -339,7 +304,7 @@ const App = () => {
 
     } catch (err) {
       console.error('Error fetching activities:', err);
-      setError('Failed to fetch activities. Check your API keys.');
+      setError(err.message || 'Failed to fetch activities. Check your Intervals.icu credentials in Settings.');
     } finally {
       setLoading(false);
     }
@@ -359,10 +324,11 @@ const App = () => {
     setUpcomingEvents(upcomingEvents.filter(e => e.id !== eventId));
   };
 
-  // Handle Strava connection
-  const handleStravaConnect = () => {
-    const authUrl = stravaService.getAuthUrl();
-    window.location.href = authUrl;
+  // Handle intervals.icu connection success
+  const handleIntervalsConnectionSuccess = async (profile) => {
+    setAthlete(profile);
+    setIsConnected(true);
+    await fetchActivities();
   };
 
   // Handle refresh with rate limiting
@@ -413,7 +379,7 @@ const App = () => {
 
               <div className="flex items-center space-x-4">
                 {/* NEW: Intervals.icu indicator */}
-                {intervalsConnected && (
+                {isConnected && (
                   <span className="text-xs text-blue-600">
                     ✓ Intervals.icu
                   </span>
@@ -431,7 +397,7 @@ const App = () => {
                 </button>
 
                 {/* Refresh Button */}
-                {isAuthenticated && (
+                {isConnected && (
                   <button
                     onClick={handleRefresh}
                     disabled={loading}
@@ -446,7 +412,7 @@ const App = () => {
         </header>
 
         {/* Navigation Tabs */}
-        {isAuthenticated && (
+        {isConnected && (
           <div className="bg-white border-b">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
               <nav className="flex space-x-8">
@@ -524,8 +490,8 @@ const App = () => {
             </div>
           )}
 
-          {!isAuthenticated ? (
-            <StravaAuth onConnect={handleStravaConnect} />
+          {!isConnected ? (
+            <IntervalsAuth onConnectionSuccess={handleIntervalsConnectionSuccess} />
           ) : (
             <>
               {activeTab === 'dashboard' && (

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Utensils, Clock, Flame, Target, Info, ChefHat } from 'lucide-react';
 
-// Nick Chase nutrition principles from project knowledge
+// Data-driven nutrition principles
 const NUTRITION_PRINCIPLES = {
   training: {
     morning: {
@@ -232,7 +232,7 @@ const MealSuggestions = ({ trainingData, foodLog, userPreferences, currentWeight
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          prompt: `Based on Nick Chase's nutrition principles, suggest 3 specific meals:
+          prompt: `Based on data-driven nutrition for endurance athletes, suggest 3 specific meals:
 
 Activity level: ${activityLevel}
 Daily macros: Protein ${macros.protein}g, Carbs ${macros.carbs}g, Fat ${macros.fat}g
@@ -514,12 +514,12 @@ Respond ONLY in valid JSON format:
 
       {/* Quick Tips */}
       <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-4 border border-purple-200">
-        <h4 className="font-semibold text-purple-900 mb-2">Nick Chase Nutrition Tips</h4>
+        <h4 className="font-semibold text-purple-900 mb-2">Smart Nutrition Tips</h4>
         <ul className="text-sm text-purple-700 space-y-1">
-          <li>• Consistency over perfection - hit 80% of your plan</li>
-          <li>• Fuel your training properly - don't under-eat on big days</li>
+          <li>• Carb cycle based on TSS: High load = higher carbs</li>
+          <li>• Fuel training properly - 30-60g carbs/hour for 90+ min sessions</li>
           <li>• Practice race nutrition during long sessions</li>
-          <li>• Track what works and adjust based on how you feel</li>
+          <li>• Anti-inflammatory foods during hard training blocks</li>
         </ul>
       </div>
     </div>

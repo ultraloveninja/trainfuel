@@ -173,7 +173,7 @@ class WorkoutAnalyzer {
 
   /**
    * Calculate carbohydrate needs during workout
-   * Based on Nick Chase's principle of 200-300 cal/hour for 60+ min workouts
+   * Based on exercise science: 30-60g carbs/hour for 60+ min sessions
    */
   calculateWorkoutCarbs(duration, intensity) {
     // No carbs needed for short workouts
@@ -206,7 +206,7 @@ class WorkoutAnalyzer {
 
   /**
    * Calculate protein needs for recovery
-   * Based on Nick Chase's principle of protein within 30 min post-workout
+   * Based on sports science: 20-30g protein within 30 min post-workout
    */
   calculateProteinNeeds(type, duration) {
     // Different activities have different protein needs
@@ -218,7 +218,7 @@ class WorkoutAnalyzer {
 
   /**
    * Calculate hydration needs
-   * Based on Nick Chase's principle: 16-20oz before, 6-8oz every 15-20min during
+   * Based on sports science: 16-20oz before, 6-8oz every 15-20min during
    */
   calculateHydration(duration, temp = 20) {
     // Base hydration rate: 500ml per hour
