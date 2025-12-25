@@ -1,6 +1,6 @@
 // src/components/TrainingPlanCalendar.js
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Play, Download, FileText, Calendar as CalendarIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Play, Download, FileText, Calendar as CalendarIcon, CalendarDays } from 'lucide-react';
 
 const TrainingPlanCalendar = ({ userSettings }) => {
   const [trainingPlan, setTrainingPlan] = useState(() => {
@@ -213,6 +213,41 @@ const TrainingPlanCalendar = ({ userSettings }) => {
     return week.workouts.reduce((sum, workout) => sum + (workout.tss || 0), 0);
   };
 
+  const goToCurrentWeek = () => {
+    if (!trainingPlan) return;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Reset time for accurate date comparison
+
+    // Find the week that contains today's date
+    const currentWeekIndex = trainingPlan.findIndex((week, index) => {
+      const weekStart = new Date(week.startDate);
+      weekStart.setHours(0, 0, 0, 0);
+
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6); // End of the week (6 days after start)
+
+      return today >= weekStart && today <= weekEnd;
+    });
+
+    // If we found a matching week, navigate to it
+    // Otherwise, find the closest upcoming week or default to week 0
+    if (currentWeekIndex !== -1) {
+      setCurrentWeek(currentWeekIndex);
+    } else {
+      // Find the first week that hasn't started yet
+      const upcomingWeekIndex = trainingPlan.findIndex(week => {
+        const weekStart = new Date(week.startDate);
+        weekStart.setHours(0, 0, 0, 0);
+        return today < weekStart;
+      });
+
+      // If all weeks are in the past, go to the last week
+      // If all weeks are in the future, go to the first week
+      setCurrentWeek(upcomingWeekIndex === -1 ? trainingPlan.length - 1 : upcomingWeekIndex === 0 ? 0 : upcomingWeekIndex);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Section */}
@@ -269,34 +304,46 @@ const TrainingPlanCalendar = ({ userSettings }) => {
       {trainingPlan ? (
         <>
           {/* Week Navigation */}
-          <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200 flex items-center justify-between">
-            <button
-              onClick={() => setCurrentWeek(Math.max(0, currentWeek - 1))}
-              disabled={currentWeek === 0}
-              className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronLeft className="w-6 h-6" />
-            </button>
-            
-            <div className="text-center">
-              <h3 className="text-xl font-bold text-gray-900">
-                Week {trainingPlan[currentWeek].weekNumber} - {trainingPlan[currentWeek].phase}
-              </h3>
-              <p className="text-gray-600 text-sm mt-1">
-                {trainingPlan[currentWeek].startDate.toLocaleDateString()} • {trainingPlan[currentWeek].focus}
-              </p>
-              <p className="text-sm text-blue-600 font-medium mt-1">
-                Weekly TSS: {getWeeklyTSS(trainingPlan[currentWeek])}
-              </p>
+          <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setCurrentWeek(Math.max(0, currentWeek - 1))}
+                disabled={currentWeek === 0}
+                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+
+              <div className="text-center">
+                <h3 className="text-xl font-bold text-gray-900">
+                  Week {trainingPlan[currentWeek].weekNumber} - {trainingPlan[currentWeek].phase}
+                </h3>
+                <p className="text-gray-600 text-sm mt-1">
+                  {trainingPlan[currentWeek].startDate.toLocaleDateString()} • {trainingPlan[currentWeek].focus}
+                </p>
+                <p className="text-sm text-blue-600 font-medium mt-1">
+                  Weekly TSS: {getWeeklyTSS(trainingPlan[currentWeek])}
+                </p>
+              </div>
+
+              <button
+                onClick={() => setCurrentWeek(Math.min(trainingPlan.length - 1, currentWeek + 1))}
+                disabled={currentWeek === trainingPlan.length - 1}
+                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
             </div>
-            
-            <button
-              onClick={() => setCurrentWeek(Math.min(trainingPlan.length - 1, currentWeek + 1))}
-              disabled={currentWeek === trainingPlan.length - 1}
-              className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronRight className="w-6 h-6" />
-            </button>
+
+            <div className="flex justify-center mt-3">
+              <button
+                onClick={goToCurrentWeek}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm"
+              >
+                <CalendarDays className="w-4 h-4" />
+                Go to Current Week
+              </button>
+            </div>
           </div>
 
           {/* Current Week Workouts */}
