@@ -1,27 +1,22 @@
-// src/App.js - Complete Integration with New Components
+// src/App.js - Complete Integration with TriDot-Style Features and AI Dashboard
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Activity, Calendar, Download, RefreshCw, Settings, AlertCircle, Zap, Brain, Home, Utensils, ClipboardList } from 'lucide-react';
-
+import { Activity, Calendar, Download, RefreshCw, Settings, AlertCircle, Zap, Brain, Home, Utensils, ClipboardList, TrendingUp, Clock } from 'lucide-react';
 
 // Import services
 import nutritionService from './services/nutritionService';
 import intervalsService from './services/intervalsService';
 
-
-
 // Import NEW components
-import WorkoutGenerator from './components/WorkoutGenerator';
-//import NutritionTracker from './components/NutritionTracker';
+import AIDashboard from './components/AIDashboard';
+import UnifiedTrainingSystem from './components/UnifiedTrainingSystem';
 import EnhancedNutritionTracker from './components/EnhancedNutritionTracker';
-import SettingsPage from './components/SettingsPage';
-import TrainingPlanCalendar from './components/TrainingPlanCalendar';
-import TrafficLightIndicator from './components/TrafficLightIndicator';
 import FitnessWidget from './components/FitnessWidget';
 
 // Import existing components
 import IntervalsAuth from './components/IntervalsAuth';
 import DashboardView from './components/DashboardView';
 import CalendarView from './components/CalendarView';
+import SettingsPage from './components/SettingsPage';
 import AddEventModal from './components/AddEventModal';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -44,7 +39,7 @@ const App = () => {
   const aiCallDebounceRef = useRef(null);
   const MIN_TIME_BETWEEN_CALLS = 60000; // 1 minute minimum between AI calls
 
-  // Settings state (NEW)
+  // Settings state (UPDATED with FTP and runPace for Zwift)
   const [userSettings, setUserSettings] = useState(() => {
     const saved = localStorage.getItem('trainfuelSettings');
     return saved ? JSON.parse(saved) : {
@@ -53,7 +48,9 @@ const App = () => {
         age: 46,
         height: '6\'2"',
         weight: 204,
-        gender: 'male'
+        gender: 'male',
+        ftp: 200,          // NEW: For Zwift bike workouts
+        runPace: '5:00'    // NEW: For Zwift run workouts (min/km)
       },
       goals: {
         primaryGoal: 'weight_loss',
@@ -205,9 +202,6 @@ const App = () => {
 
     setFoodLogHistory(filteredHistory);
     localStorage.setItem('trainfuel_food_log_history', JSON.stringify(filteredHistory));
-
-    // DON'T automatically regenerate AI recommendations
-    // User can manually refresh if needed
   }, [foodLogHistory]);
 
   // Save settings to localStorage
@@ -342,7 +336,6 @@ const App = () => {
   // Handle settings save without triggering AI
   const handleSettingsSave = useCallback((newSettings) => {
     setUserSettings(newSettings);
-    // DON'T automatically trigger AI regeneration
     console.log('Settings saved. Click refresh to update AI recommendations.');
   }, []);
 
@@ -378,12 +371,13 @@ const App = () => {
               </div>
 
               <div className="flex items-center space-x-4">
-                {/* NEW: Intervals.icu indicator */}
+                {/* Intervals.icu indicator */}
                 {isConnected && (
                   <span className="text-xs text-blue-600">
                     ✓ Intervals.icu
                   </span>
                 )}
+
                 {/* AI Toggle */}
                 <button
                   onClick={toggleAIRecommendations}
@@ -401,7 +395,8 @@ const App = () => {
                   <button
                     onClick={handleRefresh}
                     disabled={loading}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                    title="Refresh data and regenerate AI recommendations"
                   >
                     <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
                   </button>
@@ -434,7 +429,7 @@ const App = () => {
                     }`}
                 >
                   <Activity className="w-4 h-4 inline mr-2" />
-                  Today's Workout
+                  Workouts & Plan
                 </button>
                 <button
                   onClick={() => setActiveTab('nutrition')}
@@ -445,16 +440,6 @@ const App = () => {
                 >
                   <Utensils className="w-4 h-4 inline mr-2" />
                   Nutrition
-                </button>
-                <button
-                  onClick={() => setActiveTab('trainingplan')}
-                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'trainingplan'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
-                >
-                  <ClipboardList className="w-4 h-4 inline mr-2" />
-                  Training Plan
                 </button>
                 <button
                   onClick={() => setActiveTab('calendar')}
@@ -494,44 +479,203 @@ const App = () => {
             <IntervalsAuth onConnectionSuccess={handleIntervalsConnectionSuccess} />
           ) : (
             <>
+              {/* DASHBOARD TAB */}
               {activeTab === 'dashboard' && (
                 <>
-                  {/* Dashboard shows profile first (inside DashboardView), then FitnessWidget */}
-                  <DashboardView
-                    athlete={athlete}
-                    activities={activities}
-                    trainingData={trainingData}
-                    nutritionPlan={dailyNutrition}
-                    upcomingEvents={upcomingEvents}
-                    loading={loading}
-                  />
-
-                  {/* FitnessWidget appears AFTER DashboardView content */}
-                  {fitnessMetrics && fitnessMetrics.ctl > 0 && (
-                    <div className="mt-6">
-                      <FitnessWidget fitness={fitnessMetrics} />
+                  {/* Profile and Stats Grid */}
+                  {athlete && (
+                    <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                      <div className="flex items-center space-x-4">
+                        {athlete.profile && (
+                          <img
+                            src={athlete.profile_medium || athlete.profile}
+                            alt={athlete.firstname}
+                            className="w-16 h-16 rounded-full"
+                          />
+                        )}
+                        <div>
+                          <h2 className="text-2xl font-bold">
+                            {athlete.firstname} {athlete.lastname}
+                          </h2>
+                          <p className="text-gray-600">{athlete.city}, {athlete.state}</p>
+                          {athlete.bio && <p className="text-sm text-gray-500 mt-1">{athlete.bio}</p>}
+                        </div>
+                      </div>
                     </div>
                   )}
-                </>
-              )}
 
-              {activeTab === 'workout' && (
-                <>
-                  {/* Workout shows FitnessWidget FIRST */}
+                  {/* Stats Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    <div className="bg-white rounded-lg shadow-md p-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-gray-500 text-sm">Total Activities</p>
+                          <p className="text-2xl font-bold">{activities?.length || 0}</p>
+                        </div>
+                        <Activity className="w-8 h-8 text-blue-500" />
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-lg shadow-md p-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-gray-500 text-sm">This Week</p>
+                          <p className="text-2xl font-bold">
+                            {activities?.filter(a => {
+                              const activityDate = new Date(a.start_date);
+                              const weekAgo = new Date();
+                              weekAgo.setDate(weekAgo.getDate() - 7);
+                              return activityDate > weekAgo;
+                            }).length || 0}
+                          </p>
+                        </div>
+                        <Calendar className="w-8 h-8 text-green-500" />
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-lg shadow-md p-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-gray-500 text-sm">Total Distance</p>
+                          <p className="text-2xl font-bold">
+                            {((activities?.reduce((sum, a) => sum + (a.distance || 0), 0) || 0) / 1609.34).toFixed(1)} mi
+                          </p>
+                        </div>
+                        <TrendingUp className="w-8 h-8 text-purple-500" />
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-lg shadow-md p-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-gray-500 text-sm">Total Time</p>
+                          <p className="text-2xl font-bold">
+                            {Math.round((activities?.reduce((sum, a) => sum + (a.moving_time || 0), 0) || 0) / 3600)} hrs
+                          </p>
+                        </div>
+                        <Clock className="w-8 h-8 text-orange-500" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Fitness Widget */}
                   {fitnessMetrics && fitnessMetrics.ctl > 0 && (
                     <div className="mb-6">
                       <FitnessWidget fitness={fitnessMetrics} />
                     </div>
                   )}
 
-                  <WorkoutGenerator
-                    stravaData={trainingData}
+                  {/* AI Training Coach - NOW ABOVE RECENT ACTIVITIES */}
+                  {aiRecommendationsEnabled && (
+                    <AIDashboard
+                      trainingData={trainingData}
+                      activities={activities}
+                      fitnessMetrics={fitnessMetrics}
+                      upcomingEvents={upcomingEvents}
+                    />
+                  )}
+
+                  {/* Recent Activities */}
+                  <div className="bg-white rounded-lg shadow-md p-6 mt-6">
+                    <h3 className="text-lg font-semibold mb-4">Recent Activities</h3>
+                    {activities && activities.length > 0 ? (
+                      <div className="space-y-3">
+                        {activities.slice(0, 5).map((activity) => (
+                          <div key={activity.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <div className="flex items-center space-x-3">
+                              <Activity className="w-5 h-5 text-gray-600" />
+                              <div>
+                                <p className="font-medium">{activity.name}</p>
+                                <p className="text-sm text-gray-500">
+                                  {new Date(activity.start_date).toLocaleDateString()} • {activity.type}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-medium">{(activity.distance / 1609.34).toFixed(2)} mi</p>
+                              <p className="text-sm text-gray-500">
+                                {Math.floor(activity.moving_time / 60)} min
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-gray-500">No activities found. Make sure you're connected to Strava.</p>
+                    )}
+                  </div>
+
+                  {/* Nutrition Summary */}
+                  {dailyNutrition && (
+                    <div className="bg-white rounded-lg shadow-md p-6 mt-6">
+                      <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <Utensils className="w-5 h-5" />
+                        Today's Nutrition Plan
+                      </h3>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="text-center">
+                          <p className="text-2xl font-bold text-blue-600">{dailyNutrition.totalCalories}</p>
+                          <p className="text-sm text-gray-500">Calories</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-2xl font-bold text-green-600">{dailyNutrition.macros?.protein}g</p>
+                          <p className="text-sm text-gray-500">Protein</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-2xl font-bold text-yellow-600">{dailyNutrition.macros?.carbs}g</p>
+                          <p className="text-sm text-gray-500">Carbs</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-2xl font-bold text-purple-600">{dailyNutrition.macros?.fat}g</p>
+                          <p className="text-sm text-gray-500">Fat</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Upcoming Events */}
+                  {upcomingEvents && upcomingEvents.length > 0 && (
+                    <div className="bg-white rounded-lg shadow-md p-6 mt-6">
+                      <h3 className="text-lg font-semibold mb-4">Upcoming Events</h3>
+                      <div className="space-y-2">
+                        {upcomingEvents.map((event) => (
+                          <div key={event.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <div>
+                              <p className="font-medium">{event.name}</p>
+                              <p className="text-sm text-gray-500">{event.type}</p>
+                            </div>
+                            <p className="text-sm text-gray-600">
+                              {new Date(event.date).toLocaleDateString()}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* WORKOUT TAB - Now uses UnifiedTrainingSystem */}
+              {activeTab === 'workout' && (
+                <>
+                  {/* Fitness Widget shows first */}
+                  {fitnessMetrics && fitnessMetrics.ctl > 0 && (
+                    <div className="mb-6">
+                      <FitnessWidget fitness={fitnessMetrics} />
+                    </div>
+                  )}
+
+                  {/* NEW: Unified Training System (replaces WorkoutGenerator + TrainingPlanCalendar) */}
+                  <UnifiedTrainingSystem
                     upcomingEvents={upcomingEvents}
-                    isInSeason={userSettings.goals.currentPhase === 'in_season'}
+                    fitnessMetrics={fitnessMetrics}
+                    userSettings={userSettings}
+                    trainingData={trainingData}
                   />
                 </>
               )}
 
+              {/* NUTRITION TAB */}
               {activeTab === 'nutrition' && (
                 <EnhancedNutritionTracker
                   trainingData={trainingData}
@@ -542,10 +686,7 @@ const App = () => {
                 />
               )}
 
-              {activeTab === 'trainingplan' && (
-                <TrainingPlanCalendar userSettings={userSettings} />
-              )}
-
+              {/* CALENDAR TAB */}
               {activeTab === 'calendar' && (
                 <CalendarView
                   activities={activities}
@@ -555,16 +696,22 @@ const App = () => {
                 />
               )}
 
+              {/* SETTINGS TAB */}
               {activeTab === 'settings' && (
-                <SettingsPage onSave={handleSettingsSave} />
+                <SettingsPage
+                  onSave={handleSettingsSave}
+                  currentSettings={userSettings}
+                />
               )}
             </>
           )}
         </main>
 
         {/* Modals */}
+        {/* Add Event Modal */}
         {showAddEventModal && (
           <AddEventModal
+            show={showAddEventModal}  // ← Make sure this is here
             onClose={() => setShowAddEventModal(false)}
             onSave={(event) => {
               addEvent(event);

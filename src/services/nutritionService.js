@@ -1,18 +1,32 @@
 // src/services/nutritionService.js
+// FIXED: Updated to use correct backend endpoint
 import axios from 'axios';
 
 class NutritionService {
   constructor() {
-    this.proxyUrl = process.env.REACT_APP_PROXY_URL || 'http://localhost:3001/api/claude';
+    // FIXED: Use correct backend URL and endpoint
+    this.backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5001';
+    this.apiEndpoint = `${this.backendUrl}/api/anthropic/messages`;
   }
 
   async callClaudeAPI(prompt) {
     try {
-      const response = await axios.post(this.proxyUrl, {
-        prompt: prompt  // Make sure we're sending 'prompt' field
+      // FIXED: Use correct API format for backend proxy
+      const response = await axios.post(this.apiEndpoint, {
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        messages: [{
+          role: 'user',
+          content: prompt
+        }]
       });
 
-      return response.data;
+      // Backend returns { content: [ { text: "..." } ] }
+      if (response.data && response.data.content && response.data.content[0]) {
+        return { content: response.data.content[0].text };
+      }
+
+      return null;
     } catch (error) {
       console.error('Error calling Claude API:', error.response?.data || error.message);
       return null;
@@ -193,7 +207,7 @@ Generate 3-4 specific meal suggestions that:
 - Consider dietary preferences and restrictions
 - Avoid repetition from recent food log
 
-CRITICAL: Respond ONLY with valid JSON in this exact format:
+CRITICAL: Respond ONLY with valid JSON in this exact format (no markdown, no code blocks):
 {
   "meals": [
     {

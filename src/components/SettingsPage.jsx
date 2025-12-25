@@ -9,7 +9,10 @@ const SettingsPage = ({ onSave }) => {
       age: 46,
       height: '6\'2"',
       weight: 204,
-      gender: 'male'
+      gender: 'male',
+      ftp: 200,
+      runPace: '5:00',
+      poolType: '25-yards'
     },
     goals: {
       primaryGoal: 'weight_loss',
@@ -97,7 +100,7 @@ const SettingsPage = ({ onSave }) => {
       const newArray = currentArray.includes(item)
         ? currentArray.filter(i => i !== item)
         : [...currentArray, item];
-      
+
       return {
         ...prev,
         [category]: {
@@ -211,11 +214,10 @@ const SettingsPage = ({ onSave }) => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors ${
-                  activeTab === tab.id
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
-                }`}
+                className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors ${activeTab === tab.id
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+                  }`}
               >
                 <tab.icon className="w-4 h-4" />
                 {tab.label}
@@ -427,6 +429,72 @@ const SettingsPage = ({ onSave }) => {
                     <option value="other">Other</option>
                   </select>
                 </div>
+                {/* Profile Tab */}
+                {activeTab === 'profile' && (
+                  <div className="space-y-4">
+                    <h2 className="text-lg font-semibold mb-4">Personal Information</h2>
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* ... existing fields (Name, Age, Height, Weight, Gender) ... */}
+
+                      {/* ADD THESE TWO NEW FIELDS AFTER GENDER: */}
+
+                      {/* FTP Field */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          FTP (Watts)
+                        </label>
+                        <input
+                          type="number"
+                          min="50"
+                          max="500"
+                          value={settings.profile.ftp || 200}
+                          onChange={(e) => updateSettings('profile', 'ftp', parseInt(e.target.value))}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="200"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Functional Threshold Power for bike workouts
+                        </p>
+                      </div>
+
+                      {/* Run Pace Field */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Run Pace (min/km)
+                        </label>
+                        <input
+                          type="text"
+                          value={settings.profile.runPace || '5:00'}
+                          onChange={(e) => updateSettings('profile', 'runPace', e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="5:00"
+                          pattern="[0-9]:[0-5][0-9]"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Format: M:SS (e.g., 5:00 for 5 min/km)
+                        </p>
+                      </div>
+                      {/* Pool Type Field */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Pool Type
+                        </label>
+                        <select
+                          value={settings.profile.poolType || '25-yards'}
+                          onChange={(e) => updateSettings('profile', 'poolType', e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="25-yards">25 Yards (US Short Course)</option>
+                          <option value="25-meters">25 Meters (Short Course)</option>
+                          <option value="50-meters">50 Meters (Olympic)</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Select your pool length for swim workout calculations
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -496,7 +564,7 @@ const SettingsPage = ({ onSave }) => {
           {activeTab === 'food' && (
             <div className="space-y-6">
               <h2 className="text-lg font-semibold mb-4">Food & Nutrition Preferences</h2>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Diet Type
