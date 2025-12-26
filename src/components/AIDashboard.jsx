@@ -48,19 +48,46 @@ const AIDashboard = ({ trainingData, activities, fitnessMetrics, upcomingEvents 
     const recentActivities = activities?.slice(0, 7) || [];
     const weeklyTSS = recentActivities.reduce((sum, a) => sum + (a.suffer_score || 0), 0);
 
-    return `You are an expert triathlon coach. Provide 3-5 actionable insights as a JSON array.
+    // Get recent activity details
+    const activitySummary = recentActivities.map(a =>
+      `${a.type || 'Workout'}: ${Math.floor((a.moving_time || 0) / 60)}min, TSS: ${a.suffer_score || 'N/A'}`
+    ).join('\n');
 
-CURRENT FITNESS:
-- CTL: ${fitnessMetrics.ctl || 'N/A'}
-- ATL: ${fitnessMetrics.atl || 'N/A'}  
-- TSB: ${fitnessMetrics.tsb || 'N/A'}
+    // Extract wellness data if available
+    const wellness = trainingData?.wellness || {};
+    const recentHRV = wellness?.hrv || 'N/A';
+    const recentSleep = wellness?.sleep || 'N/A';
 
-RECENT TRAINING:
-- Last 7 days TSS: ${weeklyTSS}
+    return `You are an expert triathlon coach providing data-driven insights. Analyze this athlete's complete training picture and provide 3-5 actionable insights as a JSON array.
+
+CURRENT FITNESS METRICS (from Intervals.icu):
+- CTL (Chronic Training Load): ${fitnessMetrics?.ctl || 'N/A'}
+- ATL (Acute Training Load): ${fitnessMetrics?.atl || 'N/A'}
+- TSB (Training Stress Balance): ${fitnessMetrics?.tsb || 'N/A'}
+- Ramp Rate: ${fitnessMetrics?.rampRate || 'N/A'}
+
+RECOVERY INDICATORS:
+- HRV: ${recentHRV}
+- Sleep: ${recentSleep} hours
+
+RECENT TRAINING (Last 7 Days):
+- Total TSS: ${weeklyTSS}
 - Workouts: ${recentActivities.length}
+${activitySummary ? '\nActivity Breakdown:\n' + activitySummary : ''}
 
-UPCOMING EVENTS:
-${upcomingEvents?.map(e => `- ${e.name} on ${new Date(e.date).toLocaleDateString()}`).join('\n') || 'None'}
+UPCOMING RACE SCHEDULE:
+${upcomingEvents?.map(e => `- ${e.name} (${e.priority || 'B'} priority) on ${new Date(e.date).toLocaleDateString()} - ${Math.ceil((new Date(e.date) - new Date()) / (7 * 24 * 60 * 60 * 1000))} weeks away`).join('\n') || 'No upcoming events'}
+
+TRAINING PHASE GUIDANCE:
+${trainingData?.trainingPhase ? `Current Phase: ${trainingData.trainingPhase}` : ''}
+${trainingData?.weeklyTSS ? `Weekly Target TSS: ${trainingData.weeklyTSS}` : ''}
+
+Based on CTL/ATL/TSB ratios, recent activity patterns, recovery status, and race schedule, provide specific insights about:
+1. Current fitness vs fatigue state (TSB interpretation)
+2. Training load progression (is ramp rate sustainable?)
+3. Recovery needs based on HRV/sleep/TSB
+4. Periodization alignment with upcoming events
+5. Specific workout adjustments needed
 
 Return ONLY a valid JSON array in this exact format (no markdown, no explanation):
 
@@ -68,13 +95,13 @@ Return ONLY a valid JSON array in this exact format (no markdown, no explanation
   {
     "type": "fitness",
     "title": "Brief title",
-    "description": "One sentence explanation",
-    "action": "Specific action to take",
+    "description": "One sentence explanation with specific metrics",
+    "action": "Specific action to take this week",
     "priority": "high"
   }
 ]
 
-Types: fitness, recovery, nutrition, training
+Types: fitness, recovery, nutrition, training, race_prep
 Priority: high, medium, low`;
   };
 
@@ -118,25 +145,40 @@ Priority: high, medium, low`;
   };
 
   const buildChatPrompt = (question, history) => {
-    return `You are a triathlon coach. Keep responses concise and actionable.
+    const wellness = trainingData?.wellness || {};
 
-ATHLETE FITNESS:
-- CTL: ${fitnessMetrics.ctl || 'N/A'}
-- ATL: ${fitnessMetrics.atl || 'N/A'}
-- TSB: ${fitnessMetrics.tsb || 'N/A'}
+    return `You are a data-driven triathlon coach. Provide specific, actionable answers based on this athlete's complete training data.
+
+CURRENT FITNESS (Intervals.icu):
+- CTL: ${fitnessMetrics?.ctl || 'N/A'}
+- ATL: ${fitnessMetrics?.atl || 'N/A'}
+- TSB: ${fitnessMetrics?.tsb || 'N/A'}
+- Ramp Rate: ${fitnessMetrics?.rampRate || 'N/A'}
+
+RECOVERY STATUS:
+- HRV: ${wellness?.hrv || 'N/A'}
+- Sleep: ${wellness?.sleep || 'N/A'} hours
 
 RECENT WORKOUTS:
-${activities?.slice(0, 3).map(a => 
-  `- ${a.name}: ${a.type}, ${Math.round(a.moving_time / 60)}min, TSS: ${a.suffer_score || 'N/A'}`
+${activities?.slice(0, 5).map(a =>
+  `- ${a.type || 'Workout'}: ${Math.round((a.moving_time || 0) / 60)}min, TSS: ${a.suffer_score || 'N/A'}`
 ).join('\n') || 'No recent activities'}
 
-${history.length > 0 ? 'CONVERSATION:\n' + history.map(m => 
+UPCOMING EVENTS:
+${upcomingEvents?.slice(0, 3).map(e =>
+  `- ${e.name} (${e.priority || 'B'}) in ${Math.ceil((new Date(e.date) - new Date()) / (7 * 24 * 60 * 60 * 1000))} weeks`
+).join('\n') || 'None'}
+
+TRAINING PHASE:
+${trainingData?.trainingPhase || 'N/A'}
+
+${history.length > 0 ? 'CONVERSATION:\n' + history.map(m =>
   `${m.role === 'user' ? 'Athlete' : 'Coach'}: ${m.content}`
 ).join('\n') : ''}
 
 QUESTION: ${question}
 
-Provide a helpful answer based on sports science and data-driven training principles. Keep it under 100 words.`;
+Provide a helpful answer based on sports science and data-driven training principles. Reference specific metrics when relevant. Keep it under 150 words.`;
   };
 
   const callClaudeAPI = async (prompt) => {
