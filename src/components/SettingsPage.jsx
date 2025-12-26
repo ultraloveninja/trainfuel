@@ -61,18 +61,30 @@ const SettingsPage = ({ onSave }) => {
   // Load saved settings on mount
   useEffect(() => {
     const savedSettings = localStorage.getItem('trainfuelSettings');
-    if (savedSettings) {
-      setSettings(JSON.parse(savedSettings));
-    }
+    let loadedSettings = savedSettings ? JSON.parse(savedSettings) : settings;
 
     // Check intervals.icu connection status
     if (intervalsService.isConfigured()) {
       setIntervalsConnected(true);
       const storedProfile = localStorage.getItem('intervals_athlete_profile');
       if (storedProfile) {
-        setIntervalsProfile(JSON.parse(storedProfile));
+        const profile = JSON.parse(storedProfile);
+        setIntervalsProfile(profile);
+
+        // Auto-populate settings from intervals.icu if fields are empty or unset
+        if (profile.name && (!loadedSettings.profile.name || loadedSettings.profile.name === '')) {
+          loadedSettings.profile.name = profile.name;
+        }
+        if (profile.weight && (!loadedSettings.profile.weight || loadedSettings.profile.weight === 0)) {
+          loadedSettings.profile.weight = Math.round(profile.weight * 2.20462); // kg to lbs
+        }
+        if (profile.ftp && (!loadedSettings.profile.ftp || loadedSettings.profile.ftp === 0)) {
+          loadedSettings.profile.ftp = profile.ftp;
+        }
       }
     }
+
+    setSettings(loadedSettings);
   }, []);
 
   const handleSave = () => {
@@ -154,8 +166,11 @@ const SettingsPage = ({ onSave }) => {
         if (profile.weight) {
           updateSettings('profile', 'weight', Math.round(profile.weight * 2.20462)); // kg to lbs
         }
-        if (profile.name && !settings.profile.name) {
+        if (profile.name && (!settings.profile.name || settings.profile.name === '')) {
           updateSettings('profile', 'name', profile.name);
+        }
+        if (profile.ftp) {
+          updateSettings('profile', 'ftp', profile.ftp);
         }
 
         // Save updated settings
