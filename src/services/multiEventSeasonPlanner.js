@@ -68,7 +68,7 @@ class MultiEventSeasonPlanner {
       categorizedEvents,
       seasonStructure,
       weeklyPlan,
-      principles: this.tridotPlanner.getNickChasePrinciples(),
+      principles: this.tridotPlanner.getTrainingPrinciples(),
       nutritionGuidance: this.tridotPlanner.getNutritionGuidance()
     };
   }

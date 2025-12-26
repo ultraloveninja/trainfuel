@@ -136,7 +136,7 @@ ${history.length > 0 ? 'CONVERSATION:\n' + history.map(m =>
 
 QUESTION: ${question}
 
-Provide a helpful answer based on Nick Chase principles. Keep it under 100 words.`;
+Provide a helpful answer based on sports science and data-driven training principles. Keep it under 100 words.`;
   };
 
   const callClaudeAPI = async (prompt) => {
@@ -289,7 +289,7 @@ Provide a helpful answer based on Nick Chase principles. Keep it under 100 words
           ) : insights.length > 0 ? (
             <>
               <p className="text-sm text-gray-600 mb-4">
-                AI-powered insights based on your recent training and Nick Chase principles
+                AI-powered insights based on your recent training data and sports science
               </p>
               {insights.map((insight, index) => (
                 <div
@@ -416,14 +416,14 @@ Provide a helpful answer based on Nick Chase principles. Keep it under 100 words
 
       <div className="mt-6 p-4 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-200">
         <p className="text-sm font-semibold text-purple-900 mb-2">
-          Powered by Nick Chase Training Principles
+          Data-Driven Training Principles
         </p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs text-purple-700">
-          <div>🥤 Liquid nutrition</div>
-          <div>📊 Data-driven</div>
-          <div>💪 Protein timing</div>
-          <div>🧠 Mental prep</div>
-          <div>📈 Gradual adaptation</div>
+          <div>📊 Metrics-based</div>
+          <div>💪 Recovery focused</div>
+          <div>🎯 Personalized zones</div>
+          <div>📈 Progressive load</div>
+          <div>🔬 Science-backed</div>
         </div>
       </div>
     </div>

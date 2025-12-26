@@ -1,6 +1,6 @@
 // src/services/zwiftWorkoutGenerator.js
 // Generate Zwift-compatible workout files (.zwo format)
-// Supports bike and run workouts with Nick Chase training principles
+// Supports bike and run workouts with data-driven training principles
 
 class ZwiftWorkoutGenerator {
   constructor() {
@@ -52,7 +52,7 @@ class ZwiftWorkoutGenerator {
   getBikeWorkoutStructure(type, duration, ftp) {
     const structures = {
       endurance: () => {
-        // Nick Chase-style Zone 2 endurance ride
+        // Zone 2 aerobic endurance ride
         return [
           { type: 'Warmup', duration: 600, powerLow: 0.5, powerHigh: 0.65 },
           { type: 'SteadyState', duration: (duration - 20) * 60, power: 0.68 },
@@ -158,7 +158,7 @@ class ZwiftWorkoutGenerator {
    * Build complete ZWO XML file
    */
   buildZWO(name, description, workoutSegments, sport, ftp = null, pace = null) {
-    const author = 'TrainFuel - Nick Chase Style';
+    const author = 'TrainFuel - Data-Driven Training';
     const category = sport === 'bike' ? 'FTP' : 'Benchmark';
     
     // Build workout segments XML
@@ -174,7 +174,7 @@ class ZwiftWorkoutGenerator {
     <sportType>${sport}</sportType>
     <tags>
         <tag name="TrainFuel"/>
-        <tag name="Nick Chase"/>
+        <tag name="Data-Driven"/>
     </tags>
     <workout>
         ${segmentsXML}
@@ -211,7 +211,7 @@ class ZwiftWorkoutGenerator {
 
       case 'SteadyState':
         if (sport === 'bike') {
-          const message = segment.message || 'Steady effort - Nick Chase Zone 2';
+          const message = segment.message || 'Steady effort - Zone 2';
           return `<SteadyState Duration="${segment.duration}" Power="${segment.power}" pace="0">
             <textevent timeoffset="0" message="${message}"/>
             ${segment.duration > 600 ? `<textevent timeoffset="${segment.duration / 2}" message="Halfway - keep it steady"/>` : ''}
@@ -286,7 +286,7 @@ class ZwiftWorkoutGenerator {
         type: workoutType,
         duration: parseInt(duration) || 60,
         ftp,
-        description: description || 'Nick Chase-inspired training',
+        description: description || 'Data-driven training',
         name: name || `${type} ${discipline}`
       });
     } else if (discipline === 'run') {
@@ -300,7 +300,7 @@ class ZwiftWorkoutGenerator {
         type: workoutType,
         duration: parseInt(duration) || 45,
         pace: runPace,
-        description: description || 'Nick Chase-inspired training',
+        description: description || 'Data-driven training',
         name: name || `${type} ${discipline}`
       });
     }

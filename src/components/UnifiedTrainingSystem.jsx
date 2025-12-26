@@ -677,9 +677,9 @@ const UnifiedTrainingSystem = ({
         </div>
       )}
 
-      {/* Nick Chase Training Principles */}
+      {/* Data-Driven Training Principles */}
       <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-200 p-6">
-        <h3 className="text-lg font-semibold text-purple-900 mb-4">Nick Chase Training Principles</h3>
+        <h3 className="text-lg font-semibold text-purple-900 mb-4">Training Principles</h3>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {trainingPlan?.principles?.map((principle, index) => (
             <div key={index} className="text-center">

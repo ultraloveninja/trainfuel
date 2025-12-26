@@ -1,6 +1,6 @@
 // src/services/tridotStylePlanner.js
 // TriDot-inspired training plan generator with AI-powered adjustments
-// Uses Intervals.icu fitness metrics and Nick Chase principles
+// Uses Intervals.icu fitness metrics and data-driven training principles
 
 class TriDotStylePlanner {
   constructor() {
@@ -135,12 +135,12 @@ class TriDotStylePlanner {
           {
             name: 'Zone 2 Endurance',
             duration: 90,
-            description: 'Nick Chase-style endurance ride',
+            description: 'Aerobic endurance ride',
             intensity: 'Easy',
             tss: 80,
             structure: '90min @ 65-75% FTP, flat terrain',
             nutrition: 'Liquid only - 200cal/hour Tailwind',
-            nickChase: true
+            dataFocused: true
           },
           {
             name: 'Recovery Spin',
@@ -161,7 +161,7 @@ class TriDotStylePlanner {
             tss: 90,
             structure: 'Warmup 15min, 3x15min @ 85-90% FTP (5min rest), Cooldown 15min',
             nutrition: 'Liquid nutrition - 250cal/hour',
-            nickChase: true
+            dataFocused: true
           },
           {
             name: 'Hilly Endurance',
@@ -213,7 +213,7 @@ class TriDotStylePlanner {
             tss: 70,
             structure: '90min @ easy pace, include strides',
             nutrition: 'Liquid nutrition if >60min',
-            nickChase: true
+            dataFocused: true
           }
         ],
         moderate: [
@@ -267,7 +267,7 @@ class TriDotStylePlanner {
             tss: 85,
             structure: '60min bike @ 75% FTP, then 30min run @ easy-moderate pace',
             nutrition: 'Liquid on bike, practice T2 fueling',
-            nickChase: true
+            dataFocused: true
           }
         ],
         hard: [
@@ -279,7 +279,7 @@ class TriDotStylePlanner {
             tss: 125,
             structure: '90min bike @ race pace, then 30min run @ race pace',
             nutrition: 'Full race day nutrition practice',
-            nickChase: true
+            dataFocused: true
           }
         ]
       },
@@ -351,7 +351,7 @@ class TriDotStylePlanner {
       planLength,
       phases,
       weeklyPlan,
-      principles: this.getNickChasePrinciples(),
+      principles: this.getTrainingPrinciples(),
       nutritionGuidance: this.getNutritionGuidance()
     };
   }
@@ -637,34 +637,34 @@ class TriDotStylePlanner {
   }
 
   /**
-   * Get Nick Chase training principles
+   * Get data-driven training principles
    */
-  getNickChasePrinciples() {
+  getTrainingPrinciples() {
     return [
       {
-        principle: 'Liquid Nutrition',
-        description: 'Focus on liquid calories during training - easier to digest, consistent energy',
-        application: 'Use Tailwind or similar for workouts >60min'
+        principle: 'Metrics-Based',
+        description: 'Use CTL, ATL, TSB for training decisions',
+        application: 'Track fitness trends via Intervals.icu'
       },
       {
-        principle: 'Data-Driven Training',
-        description: 'Track everything - data drives improvement',
-        application: 'Use Intervals.icu for accurate TSS and fitness tracking'
+        principle: 'Recovery Focused',
+        description: 'Train when recovered, rest when needed',
+        application: 'Monitor HRV and sleep quality daily'
       },
       {
-        principle: 'Protein Timing',
-        description: 'Protein within 30 minutes post-workout',
-        application: 'Recovery shake immediately after hard sessions'
+        principle: 'Personalized Zones',
+        description: 'Train in zones based on your FTP and HR thresholds',
+        application: 'Regular FTP and threshold testing'
       },
       {
-        principle: 'Sports Psychology',
-        description: 'Mental preparation is as important as physical',
-        application: 'Visualize races, practice mental strategies during training'
+        principle: 'Progressive Load',
+        description: 'Gradual increase in training stress',
+        application: 'Increase weekly TSS by 5-10% maximum'
       },
       {
-        principle: 'Gradual Adaptation',
-        description: 'Avoid huge jumps in training load',
-        application: 'Increase weekly TSS by no more than 10% per week'
+        principle: 'Science-Backed',
+        description: 'Evidence-based training methodology',
+        application: 'Periodization, carb cycling, protein timing'
       }
     ];
   }
