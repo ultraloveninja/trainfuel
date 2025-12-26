@@ -50,7 +50,7 @@ const App = () => {
         weight: 204,
         gender: 'male',
         ftp: 200,          // NEW: For Zwift bike workouts
-        runPace: '5:00'    // NEW: For Zwift run workouts (min/km)
+        runPace: '8:00'    // NEW: For Zwift run workouts (min/mile)
       },
       goals: {
         primaryGoal: 'weight_loss',

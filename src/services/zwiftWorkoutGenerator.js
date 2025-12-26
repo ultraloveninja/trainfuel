@@ -37,7 +37,7 @@ class ZwiftWorkoutGenerator {
     const {
       type = 'endurance',
       duration = 45, // minutes
-      pace = '5:00', // min/km
+      pace = '8:00', // min/mile
       description = '',
       name = 'Custom Run Workout'
     } = config;
@@ -273,7 +273,7 @@ class ZwiftWorkoutGenerator {
    */
   generateFromPlanWorkout(planWorkout, userSettings = {}) {
     const { type, discipline, duration, intensity, description, name, tss } = planWorkout;
-    const { ftp = 200, runPace = '5:00' } = userSettings;
+    const { ftp = 200, runPace = '8:00' } = userSettings;
 
     if (discipline === 'bike' || discipline === 'brick') {
       // Determine bike workout type from intensity
@@ -318,7 +318,7 @@ class ZwiftWorkoutGenerator {
   /**
    * Preview workout structure
    */
-  previewWorkout(sport, type, duration, ftp = 200, pace = '5:00') {
+  previewWorkout(sport, type, duration, ftp = 200, pace = '8:00') {
     if (sport === 'bike') {
       const structure = this.getBikeWorkoutStructure(type, duration, ftp);
       return this.formatPreview(structure, 'bike', ftp);

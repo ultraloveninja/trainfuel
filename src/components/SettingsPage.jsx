@@ -11,7 +11,7 @@ const SettingsPage = ({ onSave }) => {
       weight: 204,
       gender: 'male',
       ftp: 200,
-      runPace: '5:00',
+      runPace: '8:00',
       poolType: '25-yards'
     },
     goals: {
@@ -475,18 +475,18 @@ const SettingsPage = ({ onSave }) => {
                       {/* Run Pace Field */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Run Pace (min/km)
+                          Run Pace (min/mile)
                         </label>
                         <input
                           type="text"
-                          value={settings.profile.runPace || '5:00'}
+                          value={settings.profile.runPace || '8:00'}
                           onChange={(e) => updateSettings('profile', 'runPace', e.target.value)}
                           className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="5:00"
+                          placeholder="8:00"
                           pattern="[0-9]:[0-5][0-9]"
                         />
                         <p className="text-xs text-gray-500 mt-1">
-                          Format: M:SS (e.g., 5:00 for 5 min/km)
+                          Format: M:SS (e.g., 8:00 for 8 min/mile)
                         </p>
                       </div>
                       {/* Pool Type Field */}
