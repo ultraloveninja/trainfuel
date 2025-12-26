@@ -25,6 +25,7 @@ const UnifiedTrainingSystem = ({
   const [viewMode, setViewMode] = useState('week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [todaysWorkout, setTodaysWorkout] = useState(null);
+  const [selectedWorkout, setSelectedWorkout] = useState(null); // Track which workout is selected
   const [generating, setGenerating] = useState(false);
 
   // Get today's workout when plan changes
@@ -35,6 +36,7 @@ const UnifiedTrainingSystem = ({
         ? getTodaysWorkoutMulti(trainingPlan)
         : tridotPlanner.getTodaysWorkout(trainingPlan, fitnessMetrics);
       setTodaysWorkout(workout);
+      setSelectedWorkout(workout); // Also set as initially selected workout
     }
   }, [trainingPlan, fitnessMetrics]);
 
@@ -285,6 +287,13 @@ const UnifiedTrainingSystem = ({
   const weekSummary = getWeekSummary();
   const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+  // Handle clicking on a day to view that workout
+  const handleDayClick = (workout) => {
+    if (workout) {
+      setSelectedWorkout(workout);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header - Multi-Event Display */}
@@ -452,31 +461,33 @@ const UnifiedTrainingSystem = ({
         </div>
       </div>
 
-      {/* Today's Workout - Highlighted */}
-      {todaysWorkout && (
+      {/* Selected Workout Display - Highlighted */}
+      {selectedWorkout && (
         <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-sm font-medium opacity-90">TODAY'S WORKOUT</h3>
-              <h2 className="text-2xl font-bold mt-1">{todaysWorkout.name}</h2>
+              <h3 className="text-sm font-medium opacity-90">
+                {selectedWorkout.day === daysOfWeek[new Date().getDay()] ? "TODAY'S WORKOUT" : `${selectedWorkout.day?.toUpperCase()}'S WORKOUT`}
+              </h3>
+              <h2 className="text-2xl font-bold mt-1">{selectedWorkout.name}</h2>
             </div>
             <div className="text-right">
-              <div className="text-3xl mb-1">{getDisciplineIcon(todaysWorkout.discipline)}</div>
-              <p className="text-sm opacity-90">Week {todaysWorkout.week} • {todaysWorkout.phase}</p>
+              <div className="text-3xl mb-1">{getDisciplineIcon(selectedWorkout.discipline)}</div>
+              <p className="text-sm opacity-90">Week {selectedWorkout.week} • {selectedWorkout.phase}</p>
             </div>
           </div>
 
           {/* Race Week Indicator */}
-          {todaysWorkout.event && (
+          {selectedWorkout.event && (
             <div className="mb-4 p-3 bg-yellow-500/20 border border-yellow-400/50 rounded-lg">
               <div className="flex items-center gap-2">
                 <Target className="w-5 h-5" />
                 <div>
-                  <p className="font-semibold">Race Week: {todaysWorkout.event.name}</p>
+                  <p className="font-semibold">Race Week: {selectedWorkout.event.name}</p>
                   <p className="text-sm opacity-90">
-                    {todaysWorkout.event.priority === 'A' && 'Goal Race - Full Taper'}
-                    {todaysWorkout.event.priority === 'B' && 'Important Race - Reduced Volume'}
-                    {todaysWorkout.event.priority === 'C' && 'Training Race - Normal Volume'}
+                    {selectedWorkout.event.priority === 'A' && 'Goal Race - Full Taper'}
+                    {selectedWorkout.event.priority === 'B' && 'Important Race - Reduced Volume'}
+                    {selectedWorkout.event.priority === 'C' && 'Training Race - Normal Volume'}
                   </p>
                 </div>
               </div>
@@ -489,57 +500,57 @@ const UnifiedTrainingSystem = ({
                 <Clock className="w-4 h-4" />
                 <span className="text-sm">Duration</span>
               </div>
-              <p className="font-semibold">{todaysWorkout.duration}</p>
+              <p className="font-semibold">{selectedWorkout.duration}</p>
             </div>
             <div className="bg-white/10 rounded-lg p-3">
               <div className="flex items-center gap-2 mb-1">
                 <Zap className="w-4 h-4" />
                 <span className="text-sm">Intensity</span>
               </div>
-              <p className="font-semibold">{todaysWorkout.intensity}</p>
+              <p className="font-semibold">{selectedWorkout.intensity}</p>
             </div>
             <div className="bg-white/10 rounded-lg p-3">
               <div className="flex items-center gap-2 mb-1">
                 <Target className="w-4 h-4" />
                 <span className="text-sm">TSS</span>
               </div>
-              <p className="font-semibold">{todaysWorkout.tss}</p>
+              <p className="font-semibold">{selectedWorkout.tss}</p>
             </div>
             <div className="bg-white/10 rounded-lg p-3">
               <div className="flex items-center gap-2 mb-1">
                 <Activity className="w-4 h-4" />
                 <span className="text-sm">Focus</span>
               </div>
-              <p className="font-semibold text-sm">{todaysWorkout.phase}</p>
+              <p className="font-semibold text-sm">{selectedWorkout.phase}</p>
             </div>
           </div>
 
           <div className="mb-4">
             <p className="text-sm font-medium mb-2">Workout Details:</p>
             <p className="text-sm opacity-90">
-              {todaysWorkout.discipline === 'swim'
-                ? convertSwimWorkoutDescription(todaysWorkout.description, userSettings?.profile?.poolType)
-                : todaysWorkout.description
+              {selectedWorkout.discipline === 'swim'
+                ? convertSwimWorkoutDescription(selectedWorkout.description, userSettings?.profile?.poolType)
+                : selectedWorkout.description
               }
             </p>
-            {todaysWorkout.structure && (
+            {selectedWorkout.structure && (
               <p className="text-sm opacity-90 mt-2">
                 <strong>Structure:</strong> {
-                  todaysWorkout.discipline === 'swim'
-                    ? convertSwimStructure(todaysWorkout.structure, userSettings?.profile?.poolType)
-                    : todaysWorkout.structure
+                  selectedWorkout.discipline === 'swim'
+                    ? convertSwimStructure(selectedWorkout.structure, userSettings?.profile?.poolType)
+                    : selectedWorkout.structure
                 }
               </p>
             )}
           </div>
 
-          {todaysWorkout.modified && (
+          {selectedWorkout.modified && (
             <div className="bg-yellow-500/20 border border-yellow-400/50 rounded-lg p-3 mb-4">
               <div className="flex items-start gap-2">
                 <AlertCircle className="w-5 h-5 mt-0.5" />
                 <div>
                   <p className="font-semibold">Workout Adjusted by AI</p>
-                  <p className="text-sm opacity-90 mt-1">{todaysWorkout.aiReason}</p>
+                  <p className="text-sm opacity-90 mt-1">{selectedWorkout.aiReason}</p>
                 </div>
               </div>
             </div>
@@ -547,19 +558,19 @@ const UnifiedTrainingSystem = ({
 
           <div className="bg-white/10 rounded-lg p-3">
             <p className="text-sm font-medium mb-1">Nutrition Strategy:</p>
-            <p className="text-sm opacity-90">{todaysWorkout.nutrition}</p>
+            <p className="text-sm opacity-90">{selectedWorkout.nutrition}</p>
           </div>
 
           <button
-            onClick={() => setTodaysWorkout(null)}
+            onClick={() => setSelectedWorkout(null)}
             className="w-full mt-4 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
           >
             Mark Complete
           </button>
 
-          {(todaysWorkout.discipline === 'bike' || todaysWorkout.discipline === 'run') && (
+          {(selectedWorkout.discipline === 'bike' || selectedWorkout.discipline === 'run') && (
             <button
-              onClick={() => exportToZwift(todaysWorkout)}
+              onClick={() => exportToZwift(selectedWorkout)}
               className="w-full mt-2 px-4 py-2 bg-white text-blue-600 rounded-lg hover:bg-gray-100 transition-colors flex items-center justify-center gap-2"
             >
               <Download className="w-4 h-4" />
@@ -628,12 +639,19 @@ const UnifiedTrainingSystem = ({
             {daysOfWeek.map((day, index) => {
               const workout = getWorkoutForDay(day);
               const isToday = new Date().getDay() === index;
+              const isSelected = selectedWorkout && selectedWorkout.day === day;
 
               return (
                 <div
                   key={day}
-                  className={`border-2 rounded-lg p-3 transition-all ${isToday ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
-                    }`}
+                  onClick={() => handleDayClick(workout)}
+                  className={`border-2 rounded-lg p-3 transition-all cursor-pointer ${
+                    isSelected
+                      ? 'border-purple-500 bg-purple-50 ring-2 ring-purple-200'
+                      : isToday
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  }`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <h4 className="font-medium text-sm">{day.substring(0, 3)}</h4>
